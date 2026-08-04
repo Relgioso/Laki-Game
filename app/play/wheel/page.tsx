@@ -25,6 +25,21 @@ type PlayResultPrize = {
 // Number of full rotations to add on top of the landing angle, purely for animation flair.
 const EXTRA_SPINS = 5
 
+// Real product photos for prizes that have one. Matched by normalized name
+// (lowercase, spaces stripped) against the prize's configured name in the
+// admin screen — a prize without a matching entry here just shows its name
+// as text in the reveal, no photo.
+const PRIZE_PHOTOS: Record<string, string> = {
+  totebag: '/prizes/totebag-prize.png',
+  coinpurse: '/prizes/coin-purse-prize.png',
+  roundfan: '/prizes/round-fan-prize.png',
+}
+
+function prizePhotoFor(name: string): string | null {
+  const key = name.toLowerCase().replace(/\s+/g, '')
+  return PRIZE_PHOTOS[key] ?? null
+}
+
 export default function PlayWheelPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -324,42 +339,11 @@ export default function PlayWheelPage() {
             </div>
           )}
 
-          {/* Center hub — fixed, never rotates. At rest, the small dark LAKI WIN
-              badge (unchanged). On reveal, it grows into a white glowing circle
-              with the prize name below it — the only place the result is shown;
-              there is no separate banner anymore (was a duplicate display). */}
-          <div
-            key={result ? 'revealed' : 'idle'}
-            className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center"
-            style={{
-              width: 96,
-              transform: result ? 'translate(-50%, -50%) scale(1.7)' : 'translate(-50%, -50%) scale(1)',
-              animation: result ? 'wheel-hub-grow 500ms cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
-            }}
-          >
-            {result ? (
-              <>
-                <div
-                  className="flex items-center justify-center rounded-full bg-white p-3"
-                  style={{
-                    width: 96,
-                    height: 96,
-                    border: '4px solid #fad403',
-                    boxShadow: '0 0 30px 14px rgba(255,255,255,0.55)',
-                  }}
-                >
-                  <Image src="/brand/lakiwin-horizontal.png" alt="LAKI WIN" width={3328} height={2118} className="w-full h-auto" />
-                </div>
-                <p
-                  className="mt-1 text-[13px] font-extrabold text-white text-center leading-tight px-1"
-                  style={{ textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 1px 1px 2px rgba(0,0,0,0.6)' }}
-                >
-                  {result.name}
-                </p>
-              </>
-            ) : (
-              <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
-            )}
+          {/* Center hub — fixed, never rotates, never resizes. The win reveal is a
+              separate full-screen overlay (below), not shown here anymore -- this
+              stays the plain resting badge at all times. */}
+          <div className="absolute left-1/2 top-1/2 z-10" style={{ width: 96, transform: 'translate(-50%, -50%)' }}>
+            <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
           </div>
         </div>
 
@@ -378,6 +362,31 @@ export default function PlayWheelPage() {
           </div>
         )}
       </div>
+
+      {/* Full-screen win reveal -- covers the wheel entirely (not a small overlay
+          sitting on top of it) so only the prize is visible, not the wheel/pointer/
+          background behind it. Tap anywhere to dismiss and return to the wheel. */}
+      {result && (
+        <button
+          type="button"
+          onClick={() => setResult(null)}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 px-8 animate-[wheel-reveal-in_300ms_ease-out]"
+        >
+          <Image src="/brand/lakiwin-horizontal.png" alt="LAKI WIN" width={3328} height={2118} className="w-40 h-auto mb-6" />
+          {prizePhotoFor(result.name) ? (
+            <Image
+              src={prizePhotoFor(result.name)!}
+              alt={result.name}
+              width={600}
+              height={600}
+              className="w-48 h-48 object-contain mb-6"
+            />
+          ) : null}
+          <p className="text-sm text-white/70 mb-1">You won</p>
+          <p className="text-3xl font-extrabold text-[#fad403] text-center">{result.name}</p>
+          <p className="mt-8 text-xs text-white/50">Tap anywhere to continue</p>
+        </button>
+      )}
     </div>
   )
 }

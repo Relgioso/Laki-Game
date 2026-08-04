@@ -25,15 +25,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Spin the Wheel: the center hub grows and settles into the win-reveal size. */
-@keyframes wheel-hub-grow {
+/* Spin the Wheel: the full-screen win reveal fades in over the wheel. */
+@keyframes wheel-reveal-in {
   0% {
-    transform: translate(-50%, -50%) scale(1);
-  }
-  60% {
-    transform: translate(-50%, -50%) scale(1.85);
+    opacity: 0;
   }
   100% {
-    transform: translate(-50%, -50%) scale(1.7);
+    opacity: 1;
   }
 }
