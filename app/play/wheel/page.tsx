@@ -3,6 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { playWinChime, scheduleSpinTicks } from '@/lib/sound'
 
 type WheelPrize = {
   id: string
@@ -111,11 +112,16 @@ export default function PlayWheelPage() {
         return prev + EXTRA_SPINS * 360 + delta
       })
 
+      // Ticking sound decelerating over the same 4.2s window as the CSS spin
+      // animation below, so it audibly "slows down" alongside the wheel.
+      scheduleSpinTicks(4200)
+
       // Reveal the result once the CSS transition (4s, see wheel div) finishes, then
       // re-fetch the config so labels/inventory reflect any admin edit made mid-event.
       window.setTimeout(() => {
         setResult(prize)
         setSpinning(false)
+        playWinChime()
         loadConfig()
           .then((data) => {
             setSlotCount(data.slotCount)
