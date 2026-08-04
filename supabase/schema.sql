@@ -32,9 +32,9 @@ CREATE TABLE IF NOT EXISTS color_combo_prizes (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 INSERT INTO color_combo_prizes (symbol, name, prize_type, probability, inventory, active) VALUES
-  ('win', 'WIN Combo', 'bonus', 0.02, NULL, true),
-  ('laki', 'LAKI Combo', 'bonus', 0.02, NULL, true),
-  ('clover', 'Clover Combo', 'bonus', 0.02, NULL, true)
+  ('win', 'WIN Combo', 'bonus', 0.05, NULL, true),
+  ('laki', 'LAKI Combo', 'bonus', 0.05, NULL, true),
+  ('clover', 'Clover Combo', 'bonus', 0.05, NULL, true)
 ON CONFLICT (symbol) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS color_merch_prizes (
