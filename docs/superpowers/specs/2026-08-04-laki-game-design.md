@@ -2,123 +2,68 @@
 
 ## Overview
 
-Laki-Game systemizes LakiWin's existing on-ground booth activation games, which today run manually. It's a standalone web app (separate from SSS Intelligence and other internal tools) used at live events: qualified players (registered + made a qualifying deposit) get one play, staff operate the game on a tablet/device at the booth, and any won prize is confirmed and physically handed out by staff — no real-money wallet or wagering integration.
+Laki-Game digitizes two LakiWin booth prize games: **Spin the Wheel** and **Color Game**. This is a standalone web app, separate from SSS Intelligence and Claire's other tools.
 
-Two games ship under one shared platform: **Spin the Wheel** (configurable prize wheel with physical/merch inventory) and **Color Game** (a fixed three-outcome multiplier game applied to the player's qualifying deposit).
+**v2 scope (superseding the original design below this point in git history):** no accounts, no login, no event/booth records, no player identity, no per-play transaction log. Just a config screen where prizes/probabilities/inventory are set up, and a public play screen anyone at the booth can tap. Prize verification and physical hand-out happen outside the app entirely, by whoever's staffing the booth — this system's only job is to run a fair random draw and keep prize inventory accurate.
 
-## Shared platform
+This is a significant simplification from the first pass at this design, which included events, booths, staff accounts, a qualified-player CSV import, and a full transaction log — cut entirely after review. If any of that is needed later (e.g. player tracking, staff accountability), it can be layered back on; nothing about v2's data model below assumes it will be.
 
-Both games share the same underlying data and staff/admin workflow — an event can offer either or both games, and reporting spans both.
+## Shared mechanics
 
-### Roles
-
-- **Admin**: creates events and booths, uploads the qualified-player CSV per event, configures the Wheel's prizes/probabilities/inventory/slot count, configures Color Game's outcome probabilities, views reports across all events and both games.
-- **Staff**: logs in, selects an event and booth, looks up a qualified player, lets them pick which game to play (if the event offers both), runs the play, confirms/claims the resulting prize. The logged-in staff member is recorded as the one who released the prize.
-
-Auth via Supabase Auth; a `staff_accounts.role` column (`admin` | `staff`) gates access. Admin actions live behind role checks in both the UI (hide/redirect) and the API layer (never trust the client).
-
-### Events, booths, and player qualification
-
-- **`events`**: name, date range, status (active/closed), which game(s) are enabled for it.
-- **`booths`**: scoped to an event — lets multiple physical booths run concurrently under the same event.
-- **`qualified_players`**: the CSV-uploaded list per event — player ID, player name, qualifying deposit amount, and a `play_used` boolean. Admin uploads this before the event (same CSV-import pattern as SSS Intelligence). Staff can only search within this list — there is no free-form player entry and no live lookup against another system.
-- **One play per qualifying deposit, across both games.** The moment a qualified player plays (either game), `play_used` flips to `true` and they cannot play again at that event, regardless of which game they chose. If an event offers both games, staff/player pick one at play time.
-
-### Server-authoritative randomization
-
-For both games, the *server* — never the client — performs the random draw. The client only receives the already-determined result and plays an animation to it. This matters for two reasons specific to this system:
-
-1. **Concurrent booths share one prize pool** (Wheel's inventory). Two staff spinning at the same instant must not both be told they won the last unit of a limited prize — the winning draw and the inventory decrement happen together, atomically, in the database (a single `UPDATE ... WHERE inventory > 0 RETURNING *`-style statement, retried against the remaining in-stock/active prize set if the first draw's prize sold out in the same instant).
-2. **Integrity** — prizes have real value; the odds can't live somewhere a player or staff member could inspect or influence.
-
-### Transactions (the shared play/claim log)
-
-One row per play, regardless of game:
-
-| Field | Notes |
-|---|---|
-| `game_type` | `'wheel'` \| `'color_game'` |
-| `event_id`, `booth_id` | |
-| `qualified_player_id` | FK, snapshots player name + qualifying deposit amount at play time |
-| `result` | Wheel: prize id + name/type snapshot. Color Game: outcome (WIN/LAKI/Clover) + multiplier + computed payout amount |
-| `status` | `won` → `claimed` |
-| `claimed_by_staff_id`, `claimed_at` | Set when staff confirms release |
-| `played_at` | |
-
-Snapshotting prize/outcome details onto the transaction (rather than only storing a foreign key) means later admin edits to prize config never rewrite history.
+- **Server-authoritative randomization.** The random draw and any inventory decrement happen in a Next.js API route (server-side), never in the browser — even with no login gating who can play, the *odds themselves* must not be inspectable or riggable from devtools. The play screen sends "I want to play [wheel|color_game]" and gets back a result; it never sends or computes the outcome itself.
+- **Inventory decrements atomically at draw time**, not at any separate "claim" step — there is no claim step in v2. A single database statement performs "pick a weighted-random prize from the currently active + in-stock set, and decrement its inventory" so two simultaneous plays (e.g. two tablets at once) can't both be told they won the last unit of a limited prize.
+- **A prize whose inventory hits zero is automatically excluded** from future draws — no manual disable step required.
+- **No live inventory display.** The config screen shows/edits the settings below; it does not surface current remaining stock. (Explicit choice — revisit if this turns out to be annoying in practice.)
+- **Config screen has no authentication.** This was an explicit simplification choice (no accounts anywhere in v2), not an oversight — worth flagging plainly: anyone with the URL can currently change prize odds/inventory. Acceptable if this only ever runs on a private/internal URL or a controlled device; revisit with at least a shared PIN if it's ever exposed more broadly.
 
 ## Spin the Wheel
 
-### Configuration
+Unchanged from the original design:
 
-- **Slot count**: 6 (default), 8, 10, or 12 — set per active configuration.
-- **Prizes**, one per slot: name, type (`merchandise` \| `bonus` \| `cash` \| `voucher` \| `consolation` \| `custom`), probability (optional — if unset, split evenly among active/in-stock prizes), inventory (nullable for non-physical types like Bonus/Cash, which don't deplete), active flag, display order.
-- v1 keeps a single active prize configuration reused across all events — not a saved library of per-event configurations. The source doc calls "event-specific wheel configurations" a future enhancement, so this keeps the schema simple until that's actually needed.
-
-### Play flow
-
-1. Staff selects a qualified, unplayed player and taps Spin.
-2. Server validates the player is qualified and unplayed, draws a weighted-random prize from the currently active + in-stock set, atomically decrements that prize's inventory (if it has finite stock), marks the player's `play_used = true`, and writes a `won` transaction.
-3. Client animates the wheel to land on the returned slot and shows the winning screen (prize, player name, event, booth, timestamp).
-4. Staff taps Claim — this is the only point a human confirms the release. Claiming updates the transaction to `claimed`, records the staff member and timestamp. (Inventory was already decremented at draw time in step 2, not at claim time — otherwise a won-but-unclaimed prize could still be drawn again by someone else while sitting in limbo.)
-
-### Inventory behavior
-
-- Decrements automatically on draw (see above), not on claim.
-- A prize whose inventory reaches zero is automatically excluded from future draws (treated as inactive for randomization purposes) — no separate manual "disable" step required, though admin can still see it in the config UI to restock or replace it.
+- **Slot count**: 6 (default), 8, 10, or 12.
+- **Prizes**, one per slot: name, type (`merchandise` | `bonus` | `cash` | `voucher` | `consolation` | `custom`), probability (optional — if unset, split evenly among active/in-stock prizes), inventory (nullable for non-physical types like Bonus/Cash, which don't deplete), active flag, display order.
+- Play: tap Spin → server draws a weighted-random prize from the active+in-stock set, decrements inventory if finite → client animates the wheel to the returned slot and shows the result.
 
 ## Color Game
 
-### Fixed outcomes
+Reveals 3 symbols (yellow/WIN, white/LAKI, black/Clover — matching the reference image) and resolves to one of two outcome families:
 
-Not admin-editable — locked to exactly these three, matching the existing on-ground game's paytable:
+### 3-of-a-kind combo prizes
 
-| Combination | Multiplier |
+Exactly 3 slots, one per symbol, each independently admin-configured — same shape as a Wheel prize (name, type, value, inventory, active) plus its own probability:
+
+| Combo | Example probability |
 |---|---|
-| WIN (yellow) | x3 |
-| LAKI (white) | x2 |
-| Clover (black) | x1 |
+| 3× WIN (yellow) | e.g. 0.02% |
+| 3× LAKI (white) | e.g. 0.02% |
+| 3× Clover (black) | e.g. 0.02% |
 
-### Configuration
+The "x3/x2/x1" multiplier framing from the original reference image is **not** literal math in v2 — there's no deposit or bet to multiply. Each combo is just its own named, admin-configured prize; label it however makes sense on screen (could still say "x3" as flavor text if desired, but the underlying value is whatever admin sets).
 
-- Each outcome has an admin-configurable probability, stored with enough decimal precision to support intentionally rare outcomes (e.g. 0.01% for the x3 tier) — not restricted to whole-percentage steps. The three probabilities are validated to sum to 100% in the admin UI.
-- No bet amount, no inventory, no per-event payout budget/cap.
+### Everything else → shared Merchandise pool
+
+Any result that is NOT a 3-of-a-kind (two symbols match, or all three differ) draws from one shared Merchandise prize list — structured identically to the Wheel's prizes (name, probability, inventory, active), but this list is separate from the Wheel's own prize list.
 
 ### Play flow
 
-1. Staff selects a qualified, unplayed player and taps Play.
-2. Server validates qualification, draws a weighted-random outcome from the three configured probabilities, computes `payout = qualifying_deposit_amount × multiplier`, marks `play_used = true`, writes a `won` transaction with the outcome + computed payout snapshotted.
-3. Client animates to the drawn outcome and displays the computed payout amount.
-4. Staff taps Claim, same as the Wheel — staff member + timestamp recorded, transaction marked `claimed`. The payout itself is handed out physically/outside the app, same as Wheel prizes; this system's job ends at recording who claimed what and when.
+1. Tap Play.
+2. Server draws the 3-symbol result: first determine if this play lands on a 3-of-a-kind (weighted by the three combo probabilities above) or falls through to "other" (remaining probability mass); if "other," separately draw a merchandise prize from the shared pool (weighted, active+in-stock only).
+3. Decrement inventory for whichever prize was drawn (combo prize or merchandise prize), same atomic pattern as the Wheel.
+4. Client animates the 3 symbols to the drawn result (matching combo, or a plausible non-matching arrangement if it was a Merchandise win) and displays the prize.
 
-## Reports
+## Explicitly out of scope for v2
 
-Computed across both games (filterable by event, booth, staff, game type, date range):
-
-- Total plays vs. total winners of an actual item — the Wheel's own example prize table includes a "Try Again" slot, modeled as an ordinary prize (`consolation` type) rather than a special "no win" case. Every play produces a result and a transaction, but "Try Again" doesn't count toward "total winners" or inventory-value-released figures. Color Game has no such outcome — its three combinations are all real payouts, so plays and winners are equal there.
-- Prize/outcome distribution
-- Remaining Wheel inventory
-- Most-won Wheel prize
-- Wheel inventory value released
-- Color Game total payout released
-- Plays per event, plays per staff, plays per booth
+- Any login, accounts, or roles.
+- Events, booths.
+- Player identity, qualifying-deposit tracking, CSV import.
+- Transaction/play history log of any kind.
+- Reports (nothing to report on without a log).
+- Deposit-based multiplier math for Color Game.
 
 ## Tech stack
 
-Next.js + Supabase, matching the rest of Claire's tooling (SSS Intelligence, Kler-Management, Laki Core) — Vercel hosting, Supabase Auth for staff accounts, Postgres for the atomic draw/decrement logic. New standalone repo at `Desktop/Laki-Game`, separate from every existing project.
-
-## Explicitly out of scope for v1
-
-(From the source doc's "Future Enhancements," plus decisions made during design.)
-
-- Event-specific Wheel configurations (v1 has one shared config).
-- Prize images, sound effects, animation-speed settings.
-- Lucky Spin multiplier events, QR-code prize claiming, digital vouchers.
-- Automatic low-inventory alerts (v1 auto-excludes a depleted prize from the draw, but doesn't proactively notify admin).
-- Any real-money wallet/wagering integration with LakiWin's actual platform — this system only records what staff observed and released.
-- Configurable Color Game outcomes/labels/multipliers (locked to the 3 shown).
-- Payout budget cap for Color Game.
+Next.js + Supabase (Postgres for prize config/inventory, accessed server-side via the service-role client in API routes — no Supabase Auth needed since there's no login). Vercel hosting. New repo at `Desktop/Laki-Game`.
 
 ## Testing
 
-No automated test suite convention has been set for this new project yet — recommend following the same pattern as Claire's other apps (`npm run build` as the primary automated check, manual verification against a real Supabase instance for anything involving randomization/inventory races, disposable test data cleaned up afterward). The atomic-decrement race condition (two simultaneous draws for the last unit of a prize) is the one piece of this system worth a dedicated concurrency test before relying on it at a live event.
+No automated test suite convention set yet for this project. `npm run build` as the primary automated check. The one thing worth a dedicated concurrency check before relying on this at a live event: two near-simultaneous draws against a prize with 1 remaining unit of inventory — confirm only one succeeds and the prize is correctly excluded from the very next draw.
