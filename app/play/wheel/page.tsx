@@ -324,10 +324,42 @@ export default function PlayWheelPage() {
             </div>
           )}
 
-          {/* Center hub — fixed, never rotates, never resizes. The won prize's name
-              is announced only in the banner below, not here (kept in one place). */}
-          <div className="absolute left-1/2 top-1/2 z-10" style={{ width: 96, transform: 'translate(-50%, -50%)' }}>
-            <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
+          {/* Center hub — fixed, never rotates. At rest, the small dark LAKI WIN
+              badge (unchanged). On reveal, it grows into a white glowing circle
+              with the prize name below it — the only place the result is shown;
+              there is no separate banner anymore (was a duplicate display). */}
+          <div
+            key={result ? 'revealed' : 'idle'}
+            className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center"
+            style={{
+              width: 96,
+              transform: result ? 'translate(-50%, -50%) scale(1.7)' : 'translate(-50%, -50%) scale(1)',
+              animation: result ? 'wheel-hub-grow 500ms cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
+            }}
+          >
+            {result ? (
+              <>
+                <div
+                  className="flex items-center justify-center rounded-full bg-white p-3"
+                  style={{
+                    width: 96,
+                    height: 96,
+                    border: '4px solid #fad403',
+                    boxShadow: '0 0 30px 14px rgba(255,255,255,0.55)',
+                  }}
+                >
+                  <Image src="/brand/lakiwin-horizontal.png" alt="LAKI WIN" width={3328} height={2118} className="w-full h-auto" />
+                </div>
+                <p
+                  className="mt-1 text-[13px] font-extrabold text-white text-center leading-tight px-1"
+                  style={{ textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 1px 1px 2px rgba(0,0,0,0.6)' }}
+                >
+                  {result.name}
+                </p>
+              </>
+            ) : (
+              <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
+            )}
           </div>
         </div>
 
@@ -343,13 +375,6 @@ export default function PlayWheelPage() {
         {playError && (
           <div className="relative z-10 mt-6 w-full max-w-sm rounded-lg border border-red-900 bg-red-950/90 p-3 text-sm text-red-200 text-center">
             {playError}
-          </div>
-        )}
-
-        {result && (
-          <div className="relative z-10 mt-6 w-full max-w-sm rounded-lg border border-black/20 bg-white/95 p-4 text-center shadow-lg">
-            <p className="text-xs text-black/60 mb-1">You won</p>
-            <p className="text-lg font-extrabold text-black">{result.name}</p>
           </div>
         )}
       </div>
