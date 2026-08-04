@@ -114,7 +114,7 @@ export default function ColorGameConfigPage() {
   // Combined explicit probability across the fixed combo set. This doesn't
   // need to sum to 100 -- whatever's left implicitly goes to the merch pool
   // -- but it's still useful for the admin to see at a glance.
-  const combosWithProbability = combos.filter((c) => c.probability !== null)
+  const combosWithProbability = combos.filter((c) => c.active && c.probability !== null)
   const comboProbabilityTotal = combosWithProbability.reduce(
     (sum, c) => sum + (c.probability ?? 0),
     0
