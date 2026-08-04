@@ -3,19 +3,17 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-// Public play screens (kiosk/booth tablets) must not surface links into the
-// admin config screens -- a player standing at the booth could otherwise tap
-// straight into prize/inventory setup. Every other route keeps the full nav.
+// The landing page and both public play screens (kiosk/booth tablets) each
+// have their own fully custom, branded design with no shared chrome -- a
+// player standing at the booth must not see a nav bar that could lead
+// straight into prize/inventory setup. Only the admin config screens use
+// this shared header, for convenience navigating between the two of them.
 export default function SiteHeader() {
   const pathname = usePathname()
-  const isPlayScreen = pathname?.startsWith('/play')
+  const isAdminScreen = pathname?.startsWith('/admin')
 
-  if (isPlayScreen) {
-    return (
-      <header className="border-b border-black/[.08] dark:border-white/[.145] px-6 py-4 flex items-center">
-        <span className="font-semibold text-lg">Laki-Game</span>
-      </header>
-    )
+  if (!isAdminScreen) {
+    return null
   }
 
   return (
