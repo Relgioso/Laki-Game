@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { playWinChime, scheduleSpinTicks } from '@/lib/sound'
 
 type WheelPrize = {
@@ -36,9 +36,9 @@ export default function PlayWheelPage() {
   const [rotation, setRotation] = useState(0)
   const [result, setResult] = useState<PlayResultPrize | null>(null)
   const [playError, setPlayError] = useState<string | null>(null)
-  // Bumped on every tick; the pointer's `key` uses this so its flick
-  // animation restarts fresh each time, kept in sync with the tick sound.
-  const [tickCount, setTickCount] = useState(0)
+
+  // Direct-DOM pointer flick (no React remount) — see handleSpin/scheduleSpinTicks.
+  const pointerInnerRef = useRef<HTMLDivElement>(null)
 
   const loadConfig = useCallback(async () => {
     const res = await fetch('/api/wheel/config')
@@ -82,6 +82,22 @@ export default function PlayWheelPage() {
 
   const segmentAngle = 360 / slotCount
 
+  // Flicks the pointer via direct style manipulation (snap to an angle, then a CSS
+  // transition eases it back to rest) rather than restarting a React-keyed CSS
+  // animation, which was causing a visible "blink" (the pointer image briefly
+  // unmounting/remounting on every tick) instead of a smooth motion.
+  function flickPointer() {
+    const el = pointerInnerRef.current
+    if (!el) return
+    el.style.transition = 'none'
+    el.style.transform = 'rotate(-16deg)'
+    // Force a reflow so the transition set below actually applies from this
+    // snapped state, instead of being batched together with it.
+    void el.offsetHeight
+    el.style.transition = 'transform 150ms ease-out'
+    el.style.transform = 'rotate(0deg)'
+  }
+
   async function handleSpin() {
     if (spinning) return
     setSpinning(true)
@@ -117,9 +133,9 @@ export default function PlayWheelPage() {
 
       // Ticking sound decelerating over the same 4.2s window as the CSS spin
       // animation below, so it audibly "slows down" alongside the wheel — the
-      // same schedule also bumps tickCount, which re-triggers the pointer's
-      // flick animation, so the sound and the visual never drift apart.
-      scheduleSpinTicks(4200, () => setTickCount((c) => c + 1))
+      // same schedule also flicks the pointer, so the sound and the visual
+      // never drift apart.
+      scheduleSpinTicks(4200, flickPointer)
 
       // Reveal the result once the CSS transition (4s, see wheel div) finishes, then
       // re-fetch the config so labels/inventory reflect any admin edit made mid-event.
@@ -161,7 +177,13 @@ export default function PlayWheelPage() {
   }
 
   const wheelSize = 320
-  const ringWidth = 8
+  // The provided wheel_6slice.svg asset is a fixed 6-slice design — strictly
+  // following it (rather than a generic N-slice approximation) means using it
+  // as-is. Locked to 6 for now, per instruction; 8/10/12 will get their own
+  // matching art from Claire before being wired back in, so a slotCount other
+  // than 6 (shouldn't happen — the admin picker is now locked to 6 too) falls
+  // back to a plain solid wheel rather than misusing the 6-slice art.
+  const usingSixSliceArt = slotCount === 6
 
   return (
     <div
@@ -197,116 +219,115 @@ export default function PlayWheelPage() {
         </Link>
       </div>
 
-      <div className="relative z-10 mt-10 flex flex-1 flex-col items-center justify-center">
+      {/* justify-start (not center) deliberately -- the wheel's vertical position
+          must stay fixed regardless of whether the error/result banners below are
+          showing. Centering the whole group would shift the wheel up/down every
+          time a banner appears or disappears, which read as the wheel "jumping." */}
+      <div className="relative z-10 mt-10 flex flex-1 flex-col items-center">
         <div className="relative" style={{ width: wheelSize, height: wheelSize }}>
           {/* Pointer, fixed at the top, pointing down into the wheel. Doesn't rotate
-              with the wheel, but flicks back on each tick (key={tickCount} restarts
-              the CSS animation fresh every tick) to feel like a real physical
-              pointer being pushed by each divider as it passes underneath. */}
+              with the wheel, but flicks back on each tick (see flickPointer) to feel
+              like a real physical pointer being pushed by each divider as it passes
+              underneath. */}
           <div className="absolute left-1/2 z-20" style={{ top: -34, width: 46, transform: 'translateX(-50%)' }}>
-            <div
-              key={tickCount}
-              style={{
-                animation: tickCount > 0 ? 'wheel-pointer-flick 180ms ease-out' : undefined,
-                transformOrigin: '50% 15%',
-              }}
-            >
+            <div ref={pointerInnerRef} style={{ transformOrigin: '50% 15%' }}>
               <Image src="/wheel/pointer.svg" alt="" width={386} height={566} className="w-full h-auto" />
             </div>
           </div>
 
-          {/* Rotating wheel: solid-color wedges, black dividers, prize labels, rim pegs. */}
-          <div
-            className="relative rounded-full"
-            style={{
-              width: wheelSize,
-              height: wheelSize,
-              background: '#fad403',
-              border: `${ringWidth}px solid #1a1a1a`,
-              boxShadow: '0 6px 16px rgba(0,0,0,0.4)',
-              transform: `rotate(${rotation}deg)`,
-              transition: 'transform 4s cubic-bezier(0.17, 0.67, 0.2, 1)',
-            }}
-          >
-            {/* Divider lines, one per wedge boundary. */}
-            {segments.map((_, i) => (
-              <div
-                key={`divider-${i}`}
-                className="absolute left-1/2 top-1/2 origin-top"
-                style={{
-                  width: 3,
-                  height: wheelSize / 2 - ringWidth,
-                  background: '#1a1a1a',
-                  transform: `translate(-50%, 0) rotate(${i * segmentAngle}deg)`,
-                }}
-              />
-            ))}
+          {/* Rotating wheel. */}
+          {usingSixSliceArt ? (
+            <div
+              className="relative rounded-full"
+              style={{
+                width: wheelSize,
+                height: wheelSize,
+                transform: `rotate(${rotation}deg)`,
+                transition: 'transform 4s cubic-bezier(0.17, 0.67, 0.2, 1)',
+              }}
+            >
+              <Image src="/wheel/wheel_6slice.svg" alt="" width={2011} height={2011} className="w-full h-full" priority />
 
-            {/* Rim pegs, one per wedge boundary, matching the reference design. */}
-            {segments.map((_, i) => {
-              const r = wheelSize / 2 - ringWidth - 6
-              return (
-                <div
-                  key={`peg-${i}`}
-                  className="absolute left-1/2 top-1/2"
-                  style={{ width: 0, height: 0, transform: `rotate(${i * segmentAngle}deg)` }}
-                >
-                  <span
-                    className="absolute rounded-full bg-white shadow-[0_0_6px_2px_rgba(255,255,255,0.6)]"
-                    style={{ width: 10, height: 10, left: -5, top: -r - 5 }}
-                  />
-                </div>
-              )
-            })}
-
-            {/* Prize labels, one per wedge, oriented radially outward from center. */}
-            {segments.map((prize, i) => {
-              const centerAngle = i * segmentAngle + segmentAngle / 2
-              return (
-                <div
-                  key={`label-${i}`}
-                  className="absolute left-1/2 top-1/2"
-                  style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
-                >
-                  <span
-                    className="absolute text-[11px] font-bold text-black px-1 text-center leading-tight"
-                    style={{
-                      top: -(wheelSize / 2 - ringWidth - 40),
-                      left: 0,
-                      transform: 'translateX(-50%)',
-                      display: 'inline-block',
-                      width: 84,
-                    }}
+              {/* Prize labels, one per wedge, oriented radially outward from center. */}
+              {segments.map((prize, i) => {
+                const centerAngle = i * segmentAngle + segmentAngle / 2
+                return (
+                  <div
+                    key={`label-${i}`}
+                    className="absolute left-1/2 top-1/2"
+                    style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
                   >
-                    {prize ? prize.name : ''}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+                    <span
+                      className="absolute text-[11px] font-bold text-black px-1 text-center leading-tight"
+                      style={{
+                        top: -(wheelSize / 2 - 40),
+                        left: 0,
+                        transform: 'translateX(-50%)',
+                        display: 'inline-block',
+                        width: 84,
+                      }}
+                    >
+                      {prize ? prize.name : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div
+              className="relative rounded-full"
+              style={{
+                width: wheelSize,
+                height: wheelSize,
+                background: '#fad403',
+                border: '8px solid #1a1a1a',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.4)',
+                transform: `rotate(${rotation}deg)`,
+                transition: 'transform 4s cubic-bezier(0.17, 0.67, 0.2, 1)',
+              }}
+            >
+              {segments.map((_, i) => (
+                <div
+                  key={`divider-${i}`}
+                  className="absolute left-1/2 top-1/2 origin-top"
+                  style={{
+                    width: 3,
+                    height: wheelSize / 2 - 8,
+                    background: '#1a1a1a',
+                    transform: `translate(-50%, 0) rotate(${i * segmentAngle}deg)`,
+                  }}
+                />
+              ))}
+              {segments.map((prize, i) => {
+                const centerAngle = i * segmentAngle + segmentAngle / 2
+                return (
+                  <div
+                    key={`label-${i}`}
+                    className="absolute left-1/2 top-1/2"
+                    style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
+                  >
+                    <span
+                      className="absolute text-[11px] font-bold text-black px-1 text-center leading-tight"
+                      style={{
+                        top: -(wheelSize / 2 - 40),
+                        left: 0,
+                        transform: 'translateX(-50%)',
+                        display: 'inline-block',
+                        width: 84,
+                      }}
+                    >
+                      {prize ? prize.name : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
-          {/* Center hub — fixed, never rotates with the wheel. Grows and settles
-              into place the moment the spin animation finishes (key={!!result}
-              restarts the CSS animation exactly once, right as `result` flips
-              from null), and the won prize's name appears just below it. */}
-          <div
-            key={result ? 'revealed' : 'idle'}
-            className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center"
-            style={{
-              width: 96,
-              transform: result ? 'translate(-50%, -50%) scale(1.7)' : 'translate(-50%, -50%) scale(1)',
-              animation: result ? 'wheel-hub-grow 500ms cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
-            }}
-          >
+          {/* Center hub — fixed, never rotates, never resizes. The won prize's name
+              is announced only in the banner below, not here (kept in one place). */}
+          <div className="absolute left-1/2 top-1/2 z-10" style={{ width: 96, transform: 'translate(-50%, -50%)' }}>
             <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
-            {result && (
-              <p
-                className="mt-1 text-[13px] font-extrabold text-white text-center leading-tight px-1"
-                style={{ textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 1px 1px 2px rgba(0,0,0,0.6)' }}
-              >
-                {result.name}
-              </p>
-            )}
           </div>
         </div>
 

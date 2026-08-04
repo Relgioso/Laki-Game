@@ -177,21 +177,31 @@ export default function WheelConfigPage() {
             Slot count
           </h2>
           <div className="flex gap-2">
-            {SLOT_COUNT_OPTIONS.map((count) => (
-              <button
-                key={count}
-                type="button"
-                onClick={() => setSlotCount(count)}
-                className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
-                  slotCount === count
-                    ? 'border-black bg-black text-white dark:border-white dark:bg-white dark:text-black'
-                    : 'border-black/[.08] dark:border-white/[.145] bg-white dark:bg-zinc-900 text-black dark:text-zinc-50 hover:border-black/[.2] dark:hover:border-white/[.3]'
-                }`}
-              >
-                {count}
-              </button>
-            ))}
+            {SLOT_COUNT_OPTIONS.map((count) => {
+              const enabled = count === 6 // Locked to 6 -- see comment below.
+              return (
+                <button
+                  key={count}
+                  type="button"
+                  disabled={!enabled}
+                  onClick={() => enabled && setSlotCount(count)}
+                  className={`rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+                    slotCount === count
+                      ? 'border-black bg-black text-white dark:border-white dark:bg-white dark:text-black'
+                      : enabled
+                        ? 'border-black/[.08] dark:border-white/[.145] bg-white dark:bg-zinc-900 text-black dark:text-zinc-50 hover:border-black/[.2] dark:hover:border-white/[.3]'
+                        : 'border-black/[.08] dark:border-white/[.145] bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed'
+                  }`}
+                >
+                  {count}
+                </button>
+              )
+            })}
           </div>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Only 6 slots for now — the wheel's art is a fixed 6-slice design. 8/10/12 will
+            come back once matching artwork is ready.
+          </p>
         </section>
 
         <section className="mb-8">
