@@ -36,6 +36,9 @@ export default function PlayWheelPage() {
   const [rotation, setRotation] = useState(0)
   const [result, setResult] = useState<PlayResultPrize | null>(null)
   const [playError, setPlayError] = useState<string | null>(null)
+  // Bumped on every tick; the pointer's `key` uses this so its flick
+  // animation restarts fresh each time, kept in sync with the tick sound.
+  const [tickCount, setTickCount] = useState(0)
 
   const loadConfig = useCallback(async () => {
     const res = await fetch('/api/wheel/config')
@@ -113,8 +116,10 @@ export default function PlayWheelPage() {
       })
 
       // Ticking sound decelerating over the same 4.2s window as the CSS spin
-      // animation below, so it audibly "slows down" alongside the wheel.
-      scheduleSpinTicks(4200)
+      // animation below, so it audibly "slows down" alongside the wheel — the
+      // same schedule also bumps tickCount, which re-triggers the pointer's
+      // flick animation, so the sound and the visual never drift apart.
+      scheduleSpinTicks(4200, () => setTickCount((c) => c + 1))
 
       // Reveal the result once the CSS transition (4s, see wheel div) finishes, then
       // re-fetch the config so labels/inventory reflect any admin edit made mid-event.
@@ -194,9 +199,20 @@ export default function PlayWheelPage() {
 
       <div className="relative z-10 mt-10 flex flex-1 flex-col items-center justify-center">
         <div className="relative" style={{ width: wheelSize, height: wheelSize }}>
-          {/* Pointer, fixed at the top, pointing down into the wheel. Never rotates. */}
+          {/* Pointer, fixed at the top, pointing down into the wheel. Doesn't rotate
+              with the wheel, but flicks back on each tick (key={tickCount} restarts
+              the CSS animation fresh every tick) to feel like a real physical
+              pointer being pushed by each divider as it passes underneath. */}
           <div className="absolute left-1/2 z-20" style={{ top: -34, width: 46, transform: 'translateX(-50%)' }}>
-            <Image src="/wheel/pointer.svg" alt="" width={386} height={566} className="w-full h-auto" />
+            <div
+              key={tickCount}
+              style={{
+                animation: tickCount > 0 ? 'wheel-pointer-flick 180ms ease-out' : undefined,
+                transformOrigin: '50% 15%',
+              }}
+            >
+              <Image src="/wheel/pointer.svg" alt="" width={386} height={566} className="w-full h-auto" />
+            </div>
           </div>
 
           {/* Rotating wheel: solid-color wedges, black dividers, prize labels, rim pegs. */}
@@ -269,9 +285,28 @@ export default function PlayWheelPage() {
             })}
           </div>
 
-          {/* Center hub — fixed, never rotates. */}
-          <div className="absolute left-1/2 top-1/2 z-10" style={{ width: 96, transform: 'translate(-50%, -50%)' }}>
+          {/* Center hub — fixed, never rotates with the wheel. Grows and settles
+              into place the moment the spin animation finishes (key={!!result}
+              restarts the CSS animation exactly once, right as `result` flips
+              from null), and the won prize's name appears just below it. */}
+          <div
+            key={result ? 'revealed' : 'idle'}
+            className="absolute left-1/2 top-1/2 z-10 flex flex-col items-center"
+            style={{
+              width: 96,
+              transform: result ? 'translate(-50%, -50%) scale(1.7)' : 'translate(-50%, -50%) scale(1)',
+              animation: result ? 'wheel-hub-grow 500ms cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
+            }}
+          >
             <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
+            {result && (
+              <p
+                className="mt-1 text-[13px] font-extrabold text-white text-center leading-tight px-1"
+                style={{ textShadow: '0 1px 0 #000, 0 -1px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 1px 1px 2px rgba(0,0,0,0.6)' }}
+              >
+                {result.name}
+              </p>
+            )}
           </div>
         </div>
 

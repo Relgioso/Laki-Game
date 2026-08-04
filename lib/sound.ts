@@ -40,10 +40,11 @@ export function playSpinTick() {
 
 // Schedules a decelerating series of ticks over `durationMs`, mimicking a
 // wheel slowing to a stop — starts fast, ends slow. Returns a cancel function.
-export function scheduleSpinTicks(durationMs: number): () => void {
+// `onTick`, if given, fires alongside every tick (e.g. to drive a matching
+// visual pointer-bounce) so the sound and the animation never drift apart —
+// one schedule drives both.
+export function scheduleSpinTicks(durationMs: number, onTick?: () => void): () => void {
   const audioCtx = getContext()
-  if (!audioCtx) return () => {}
-
   const timers: number[] = []
   const start = performance.now()
   const minInterval = 45 // ms between ticks at the start (fast)
@@ -54,7 +55,8 @@ export function scheduleSpinTicks(durationMs: number): () => void {
     const t = Math.min(1, elapsed / durationMs)
     // Ease-out curve so ticks slow down the same way the wheel visually does.
     const eased = 1 - Math.pow(1 - t, 3)
-    playSpinTick()
+    if (audioCtx) playSpinTick()
+    onTick?.()
     if (t >= 1) return
     const interval = minInterval + (maxInterval - minInterval) * eased
     timers.push(window.setTimeout(tick, interval))

@@ -24,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Spin the Wheel: the pointer "flicks" back each time a wheel divider passes
+   beneath it, re-triggered per-tick by changing the element's `key`. */
+@keyframes wheel-pointer-flick {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-16deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Spin the Wheel: the center hub grows and settles into the win-reveal size. */
+@keyframes wheel-hub-grow {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.85);
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.7);
+  }
+}
