@@ -141,9 +141,10 @@ export default function WheelConfigPage() {
   // they're excluded from the sum but counted for the remainder note.
   const activePrizesWithProbability = prizes.filter((p) => p.active && p.probability !== null)
   const activePrizesWithoutProbability = prizes.filter((p) => p.active && p.probability === null)
-  const probabilityTotal = activePrizesWithProbability.reduce(
-    (sum, p) => sum + (p.probability ?? 0),
-    0
+  // Rounded to 3 decimal places to absorb floating-point sum artifacts
+  // (e.g. 0.1 + 0.2 displaying as 0.30000000000000004) before display.
+  const probabilityTotal = Number(
+    activePrizesWithProbability.reduce((sum, p) => sum + (p.probability ?? 0), 0).toFixed(3)
   )
 
   if (loading) {

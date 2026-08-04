@@ -115,9 +115,10 @@ export default function ColorGameConfigPage() {
   // need to sum to 100 -- whatever's left implicitly goes to the merch pool
   // -- but it's still useful for the admin to see at a glance.
   const combosWithProbability = combos.filter((c) => c.active && c.probability !== null)
-  const comboProbabilityTotal = combosWithProbability.reduce(
-    (sum, c) => sum + (c.probability ?? 0),
-    0
+  // Rounded to 4 decimal places (matching color_combo_prizes.probability's NUMERIC(7,4)
+  // precision) to absorb floating-point sum artifacts before display.
+  const comboProbabilityTotal = Number(
+    combosWithProbability.reduce((sum, c) => sum + (c.probability ?? 0), 0).toFixed(4)
   )
 
   // Running total of explicit probabilities among active merch prizes.
@@ -126,9 +127,8 @@ export default function ColorGameConfigPage() {
   // remainder note.
   const activeMerchWithProbability = merch.filter((m) => m.active && m.probability !== null)
   const activeMerchWithoutProbability = merch.filter((m) => m.active && m.probability === null)
-  const merchProbabilityTotal = activeMerchWithProbability.reduce(
-    (sum, m) => sum + (m.probability ?? 0),
-    0
+  const merchProbabilityTotal = Number(
+    activeMerchWithProbability.reduce((sum, m) => sum + (m.probability ?? 0), 0).toFixed(3)
   )
 
   async function handleSave() {
