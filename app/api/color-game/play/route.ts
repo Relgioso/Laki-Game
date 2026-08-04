@@ -58,6 +58,7 @@ export async function POST() {
         return NextResponse.json({ result: won.symbol, prize: { name: won.name, prizeType: won.prize_type } })
       }
       // Fell through (lost every retry) — fall back to merch below instead of erroring outright.
+      console.warn('Color Game: combo draw exhausted retries, falling back to merchandise pool')
     }
 
     const { data: merch, error: merchError } = await supabase

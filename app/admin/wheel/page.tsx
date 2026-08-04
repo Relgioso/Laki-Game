@@ -44,6 +44,11 @@ export default function WheelConfigPage() {
 
   const [slotCount, setSlotCount] = useState<number>(6)
   const [prizes, setPrizes] = useState<NewWheelPrize[]>([])
+  // Snapshot of prizes as they were at load time, keyed by id. Used to detect
+  // whether the admin actually touched a row's inventory before this save,
+  // so we know whether to trust the client's stale inventory value or defer
+  // to the live DB value on the server. See handleSave.
+  const [originalPrizes, setOriginalPrizes] = useState<Map<string, WheelPrize>>(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -57,7 +62,9 @@ export default function WheelConfigPage() {
         if (!res.ok) throw new Error(data.error || 'Failed to load wheel config.')
         if (cancelled) return
         setSlotCount(data.slotCount)
-        setPrizes(data.prizes || [])
+        const loadedPrizes: WheelPrize[] = data.prizes || []
+        setPrizes(loadedPrizes)
+        setOriginalPrizes(new Map(loadedPrizes.map((p) => [p.id, p])))
       } catch (err: any) {
         if (!cancelled) setLoadError(err.message || 'Failed to load wheel config.')
       } finally {
@@ -89,14 +96,25 @@ export default function WheelConfigPage() {
     try {
       const payload = {
         slotCount,
-        prizes: prizes.map((p, i) => ({
-          name: p.name,
-          prizeType: p.prizeType,
-          probability: p.probability,
-          inventory: p.inventory,
-          active: p.active,
-          displayOrder: i,
-        })),
+        prizes: prizes.map((p, i) => {
+          const body: any = {
+            name: p.name,
+            prizeType: p.prizeType,
+            probability: p.probability,
+            active: p.active,
+            displayOrder: i,
+          }
+          if (p.id) body.id = p.id
+          // Only send inventory if this is a new prize (no id) or the admin
+          // actually edited it since load. Otherwise omit it entirely so the
+          // server merges in whatever the live DB value is at save time --
+          // prevents a stale inventory snapshot from resurrecting depleted
+          // stock on unrelated edits.
+          if (!p.id || p.inventory !== originalPrizes.get(p.id)?.inventory) {
+            body.inventory = p.inventory
+          }
+          return body
+        }),
       }
       const res = await fetch('/api/wheel/config', {
         method: 'PUT',
@@ -112,6 +130,21 @@ export default function WheelConfigPage() {
       setSaving(false)
     }
   }
+
+  // The play screen renders exactly slotCount wedges -- any prize beyond
+  // that count is drawable but has nowhere to display, so block saving
+  // until the admin resolves it.
+  const tooManyPrizes = prizes.length > slotCount
+
+  // Running total of explicit probabilities among active prizes. Prizes
+  // with probability === null split whatever's left over automatically, so
+  // they're excluded from the sum but counted for the remainder note.
+  const activePrizesWithProbability = prizes.filter((p) => p.active && p.probability !== null)
+  const activePrizesWithoutProbability = prizes.filter((p) => p.active && p.probability === null)
+  const probabilityTotal = activePrizesWithProbability.reduce(
+    (sum, p) => sum + (p.probability ?? 0),
+    0
+  )
 
   if (loading) {
     return (
@@ -172,6 +205,28 @@ export default function WheelConfigPage() {
             </button>
           </div>
 
+          <p
+            className={`text-xs mb-3 ${
+              probabilityTotal > 100
+                ? 'text-red-600 dark:text-red-400 font-medium'
+                : 'text-zinc-600 dark:text-zinc-400'
+            }`}
+          >
+            Probabilities total: {probabilityTotal}%
+            {activePrizesWithoutProbability.length > 0
+              ? ` (remaining ${Math.max(0, 100 - probabilityTotal)}% split across ${
+                  activePrizesWithoutProbability.length
+                } prize(s) with no probability set)`
+              : ''}
+          </p>
+
+          {tooManyPrizes && (
+            <p className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-3 text-sm text-red-700 dark:text-red-300">
+              You have {prizes.length} prizes but only {slotCount} wheel slots — remove{' '}
+              {prizes.length - slotCount} prize(s) or increase the slot count before saving.
+            </p>
+          )}
+
           {prizes.length === 0 ? (
             <p className="text-sm text-zinc-600 dark:text-zinc-400 border border-dashed border-black/[.08] dark:border-white/[.145] rounded-lg p-6 text-center">
               No prizes yet. Click &quot;Add prize&quot; to create one.
@@ -190,6 +245,7 @@ export default function WheelConfigPage() {
                         type="text"
                         value={prize.name}
                         onChange={(e) => updatePrize(index, { name: e.target.value })}
+                        maxLength={100}
                         className="rounded-md border border-black/[.08] dark:border-white/[.145] bg-transparent px-2 py-1.5 text-sm text-black dark:text-zinc-50"
                         placeholder="Prize name"
                       />
@@ -283,7 +339,7 @@ export default function WheelConfigPage() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || tooManyPrizes}
           className="rounded-md bg-black dark:bg-white text-white dark:text-black px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save'}

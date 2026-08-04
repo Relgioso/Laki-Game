@@ -60,6 +60,10 @@ export default function ColorGameConfigPage() {
 
   const [combos, setCombos] = useState<ComboPrize[]>([])
   const [merch, setMerch] = useState<NewMerchPrize[]>([])
+  // Snapshots of combos/merch as loaded, used to detect whether the admin
+  // actually touched a row's inventory before this save. See handleSave.
+  const [originalCombos, setOriginalCombos] = useState<Map<ComboSymbol, ComboPrize>>(new Map())
+  const [originalMerch, setOriginalMerch] = useState<Map<string, MerchPrize>>(new Map())
 
   useEffect(() => {
     let cancelled = false
@@ -72,8 +76,12 @@ export default function ColorGameConfigPage() {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Failed to load color game config.')
         if (cancelled) return
-        setCombos(data.combos || [])
-        setMerch(data.merch || [])
+        const loadedCombos: ComboPrize[] = data.combos || []
+        const loadedMerch: MerchPrize[] = data.merch || []
+        setCombos(loadedCombos)
+        setMerch(loadedMerch)
+        setOriginalCombos(new Map(loadedCombos.map((c) => [c.symbol, c])))
+        setOriginalMerch(new Map(loadedMerch.map((m) => [m.id, m])))
       } catch (err: any) {
         if (!cancelled) setLoadError(err.message || 'Failed to load color game config.')
       } finally {
@@ -103,27 +111,62 @@ export default function ColorGameConfigPage() {
     setMerch((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Combined explicit probability across the fixed combo set. This doesn't
+  // need to sum to 100 -- whatever's left implicitly goes to the merch pool
+  // -- but it's still useful for the admin to see at a glance.
+  const combosWithProbability = combos.filter((c) => c.probability !== null)
+  const comboProbabilityTotal = combosWithProbability.reduce(
+    (sum, c) => sum + (c.probability ?? 0),
+    0
+  )
+
+  // Running total of explicit probabilities among active merch prizes.
+  // Prizes with probability === null split whatever's left over
+  // automatically, so they're excluded from the sum but counted for the
+  // remainder note.
+  const activeMerchWithProbability = merch.filter((m) => m.active && m.probability !== null)
+  const activeMerchWithoutProbability = merch.filter((m) => m.active && m.probability === null)
+  const merchProbabilityTotal = activeMerchWithProbability.reduce(
+    (sum, m) => sum + (m.probability ?? 0),
+    0
+  )
+
   async function handleSave() {
     setSaving(true)
     setMessage(null)
     try {
       const payload = {
-        combos: combos.map((c) => ({
-          symbol: c.symbol,
-          name: c.name,
-          prizeType: c.prizeType,
-          probability: c.probability,
-          inventory: c.inventory,
-          active: c.active,
-        })),
-        merch: merch.map((m, i) => ({
-          name: m.name,
-          prizeType: m.prizeType,
-          probability: m.probability,
-          inventory: m.inventory,
-          active: m.active,
-          displayOrder: i,
-        })),
+        combos: combos.map((c) => {
+          const body: any = {
+            symbol: c.symbol,
+            name: c.name,
+            prizeType: c.prizeType,
+            probability: c.probability,
+            active: c.active,
+          }
+          // Combos always exist server-side (fixed set of 3, matched by
+          // symbol) -- only send inventory if the admin actually edited it
+          // since load, so the server can merge in the live DB value
+          // otherwise instead of resurrecting a stale snapshot.
+          if (c.inventory !== originalCombos.get(c.symbol)?.inventory) {
+            body.inventory = c.inventory
+          }
+          return body
+        }),
+        merch: merch.map((m, i) => {
+          const body: any = {
+            name: m.name,
+            prizeType: m.prizeType,
+            probability: m.probability,
+            active: m.active,
+            displayOrder: i,
+          }
+          if (m.id) body.id = m.id
+          if (!m.id || m.inventory !== originalMerch.get(m.id)?.inventory) {
+            body.inventory = m.inventory
+          }
+          return body
+        }),
       }
       const res = await fetch('/api/color-game/config', {
         method: 'PUT',
@@ -173,6 +216,17 @@ export default function ColorGameConfigPage() {
             Fixed set of three combos. Symbol cannot be changed.
           </p>
 
+          <p
+            className={`text-xs mb-3 ${
+              comboProbabilityTotal > 100
+                ? 'text-red-600 dark:text-red-400 font-medium'
+                : 'text-zinc-600 dark:text-zinc-400'
+            }`}
+          >
+            Combined combo probability: {comboProbabilityTotal}% — the remaining{' '}
+            {Math.max(0, 100 - comboProbabilityTotal)}% goes to the Merchandise pool
+          </p>
+
           <div className="flex flex-col gap-3">
             {combos.map((combo, index) => (
               <div
@@ -192,6 +246,7 @@ export default function ColorGameConfigPage() {
                       type="text"
                       value={combo.name}
                       onChange={(e) => updateCombo(index, { name: e.target.value })}
+                      maxLength={100}
                       className="rounded-md border border-black/[.08] dark:border-white/[.145] bg-transparent px-2 py-1.5 text-sm text-black dark:text-zinc-50"
                       placeholder="Prize name"
                     />
@@ -276,6 +331,21 @@ export default function ColorGameConfigPage() {
             </button>
           </div>
 
+          <p
+            className={`text-xs mb-3 ${
+              merchProbabilityTotal > 100
+                ? 'text-red-600 dark:text-red-400 font-medium'
+                : 'text-zinc-600 dark:text-zinc-400'
+            }`}
+          >
+            Probabilities total: {merchProbabilityTotal}%
+            {activeMerchWithoutProbability.length > 0
+              ? ` (remaining ${Math.max(0, 100 - merchProbabilityTotal)}% split across ${
+                  activeMerchWithoutProbability.length
+                } prize(s) with no probability set)`
+              : ''}
+          </p>
+
           {merch.length === 0 ? (
             <p className="text-sm text-zinc-600 dark:text-zinc-400 border border-dashed border-black/[.08] dark:border-white/[.145] rounded-lg p-6 text-center">
               No merchandise prizes yet. Click &quot;Add prize&quot; to create one.
@@ -294,6 +364,7 @@ export default function ColorGameConfigPage() {
                         type="text"
                         value={prize.name}
                         onChange={(e) => updateMerch(index, { name: e.target.value })}
+                        maxLength={100}
                         className="rounded-md border border-black/[.08] dark:border-white/[.145] bg-transparent px-2 py-1.5 text-sm text-black dark:text-zinc-50"
                         placeholder="Prize name"
                       />
