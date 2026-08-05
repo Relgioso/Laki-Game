@@ -34,3 +34,9 @@ body {
     opacity: 1;
   }
 }
+
+/* Duck Race: small decorative bob animation on each racing duck. */
+@keyframes duck-bob {
+  from { transform: translateY(-3px); }
+  to { transform: translateY(3px); }
+}

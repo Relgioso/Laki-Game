@@ -1,7 +1,11 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { playConfettiPop, playWinChime } from '@/lib/sound'
+import { launchConfetti } from '@/lib/confetti'
+import { prizePhotoFor } from '@/lib/prize-photos'
 
 type DuckRacePrize = {
   id: string
@@ -44,6 +48,9 @@ export default function DuckRacePage() {
   const [result, setResult] = useState<PlayResultPrize | null>(null)
   const [playError, setPlayError] = useState<string | null>(null)
 
+  const confettiCanvasRef = useRef<HTMLCanvasElement>(null)
+  const [laneDurations, setLaneDurations] = useState<Map<number, number>>(new Map())
+
   const loadConfig = useCallback(async () => {
     const res = await fetch('/api/duck-race/config')
     const data = await res.json()
@@ -71,11 +78,22 @@ export default function DuckRacePage() {
     }
   }, [loadConfig])
 
+  // Fires the confetti burst once the reveal overlay (and its canvas) is
+  // actually mounted -- same pattern as the Wheel page.
+  useEffect(() => {
+    if (!result) return
+    const canvas = confettiCanvasRef.current
+    if (!canvas) return
+    const cancel = launchConfetti(canvas)
+    return cancel
+  }, [result])
+
   async function handleRace() {
     if (racing) return
     setRacing(true)
     setPlayError(null)
     setResult(null)
+    setLaneDurations(new Map())
 
     try {
       const res = await fetch('/api/duck-race/play', { method: 'POST' })
@@ -85,9 +103,30 @@ export default function DuckRacePage() {
         setRacing(false)
         return
       }
-      // v1: show the result immediately, no animation yet (Task 7 adds that).
-      setResult(data.prize)
-      setRacing(false)
+
+      const prize: PlayResultPrize = data.prize
+      // Winner's lane always finishes in exactly 3.2s. Every other lane gets an
+      // independently randomized duration between 3.6s and 4.6s, so the winner
+      // always crosses first (0.4s of guaranteed daylight over the fastest
+      // possible non-winner) but the field doesn't look mechanically identical.
+      const durations = new Map<number, number>()
+      for (const p of prizes) {
+        durations.set(p.displayOrder, p.displayOrder === prize.displayOrder ? 3.2 : 3.6 + Math.random())
+      }
+      setLaneDurations(durations)
+      const maxDuration = Math.max(...Array.from(durations.values()))
+
+      window.setTimeout(() => {
+        setResult(prize)
+        setRacing(false)
+        playWinChime()
+        playConfettiPop()
+        loadConfig()
+          .then((data) => setPrizes((data.prizes || []).filter((p) => p.active)))
+          .catch(() => {
+            // A failed background refresh shouldn't interrupt the result the player just saw.
+          })
+      }, maxDuration * 1000 + 200)
     } catch (err: any) {
       setPlayError(err.message || 'Something went wrong — please try again.')
       setRacing(false)
@@ -140,23 +179,59 @@ export default function DuckRacePage() {
           <p className="text-sm text-white/70 text-center py-16">No prizes configured yet.</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {prizes.map((prize) => (
-              <div
-                key={prize.id}
-                data-duck-lane={prize.displayOrder}
-                className="relative h-16 rounded-lg bg-[#fad403] border-2 border-black overflow-hidden"
-              >
+            {prizes.map((prize, i) => {
+              const duration = laneDurations.get(prize.displayOrder)
+              return (
                 <div
-                  className="absolute top-1/2 -translate-y-1/2"
-                  style={{ left: '2%', width: '15%' }}
+                  key={prize.id}
+                  data-duck-lane={prize.displayOrder}
+                  className="relative h-16 rounded-lg bg-[#fad403] border-2 border-black overflow-hidden"
                 >
-                  <Duck className="w-full h-auto" />
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
+                    style={{
+                      // Gated on `duration !== undefined`, NOT on `racing` -- `racing` flips
+                      // true synchronously at the top of handleRace, before the fetch
+                      // resolves and real per-lane durations exist. Gating on `racing`
+                      // would move `left` to 84% immediately with transitionDuration still
+                      // at its default (0s, since `duration` is undefined that render),
+                      // snapping every duck to the finish line instantly before the "real"
+                      // race even starts. `laneDurations` starts empty and is only
+                      // populated after the fetch resolves, so checking a specific lane's
+                      // entry is the correct signal that it's safe to move.
+                      left: duration !== undefined ? '84%' : '2%',
+                      width: '15%',
+                      transitionProperty: 'left',
+                      transitionDuration: `${duration ?? 0}s`,
+                      transitionTimingFunction: 'linear',
+                    }}
+                  >
+                    <div
+                      style={{
+                        animation: 'duck-bob 0.5s ease-in-out infinite alternate',
+                        animationDelay: `${i * 0.13}s`,
+                      }}
+                    >
+                      <Duck className="w-full h-auto" />
+                    </div>
+                  </div>
+                  {/* Checkered finish line. */}
+                  <div
+                    className="absolute right-0 top-0 h-full w-3"
+                    style={{
+                      backgroundImage:
+                        'linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%), linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%)',
+                      backgroundSize: '8px 8px',
+                      backgroundPosition: '0 0, 4px 4px',
+                      backgroundColor: 'white',
+                    }}
+                  />
+                  <span className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full bg-white px-3 py-1 text-xs font-bold text-black border border-black">
+                    {prize.name}
+                  </span>
                 </div>
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white px-3 py-1 text-xs font-bold text-black border border-black">
-                  {prize.name}
-                </span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -174,13 +249,29 @@ export default function DuckRacePage() {
             {playError}
           </div>
         )}
-
-        {result && (
-          <p className="mt-4 text-center text-white">
-            You won: <span className="font-bold text-[#fad403]">{result.name}</span>
-          </p>
-        )}
       </div>
+
+      {result && (
+        <button
+          type="button"
+          onClick={() => setResult(null)}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 px-8 animate-[wheel-reveal-in_300ms_ease-out]"
+        >
+          {prizePhotoFor(result.name) ? (
+            <Image
+              src={prizePhotoFor(result.name)!}
+              alt={result.name}
+              width={600}
+              height={600}
+              className="w-56 h-56 object-contain mb-6"
+            />
+          ) : null}
+          <p className="text-sm text-white/70 mb-1">You won</p>
+          <p className="text-3xl font-extrabold text-[#fad403] text-center">{result.name}</p>
+          <p className="mt-8 text-xs text-white/50">Tap anywhere to continue</p>
+          <canvas ref={confettiCanvasRef} className="pointer-events-none absolute inset-0" />
+        </button>
+      )}
     </div>
   )
 }
