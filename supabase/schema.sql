@@ -49,8 +49,21 @@ CREATE TABLE IF NOT EXISTS color_merch_prizes (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS duck_race_prizes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  prize_type VARCHAR(20) NOT NULL CHECK (prize_type IN ('merchandise', 'bonus', 'cash', 'voucher', 'consolation', 'custom')),
+  probability NUMERIC(6,3),
+  inventory INTEGER,
+  active BOOLEAN NOT NULL DEFAULT true,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER TABLE wheel_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wheel_prizes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE color_combo_prizes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE color_merch_prizes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duck_race_prizes ENABLE ROW LEVEL SECURITY;
 -- No policies created — deny-all. All access goes through supabaseAdmin (service-role key) in API routes.
