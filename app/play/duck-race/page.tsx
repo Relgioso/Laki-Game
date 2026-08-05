@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { playConfettiPop, playWinChime } from '@/lib/sound'
+import { playConfettiPop, playWinChime, scheduleCrowdCheer } from '@/lib/sound'
 import { launchConfetti } from '@/lib/confetti'
 import { prizePhotoFor } from '@/lib/prize-photos'
 
@@ -25,19 +25,37 @@ type PlayResultPrize = {
 }
 
 // Claude-designed placeholder duck (no source art for this game) -- black
-// outline, white body only, per brand instruction. Faces right, matching the
-// left-to-right race direction.
+// outline, yellow (#fad403) body, matching the app's brand palette. Faces
+// right, matching the left-to-right race direction.
 function Duck({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 80" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
-      <ellipse cx="45" cy="52" rx="32" ry="22" fill="white" stroke="black" strokeWidth="4" />
-      <path d="M28 46 Q40 40 52 48 Q40 56 26 54 Z" fill="black" fillOpacity="0.08" stroke="black" strokeWidth="2" />
-      <circle cx="72" cy="28" r="16" fill="white" stroke="black" strokeWidth="4" />
+      <ellipse cx="45" cy="52" rx="32" ry="22" fill="#fad403" stroke="black" strokeWidth="4" />
+      <path d="M28 46 Q40 40 52 48 Q40 56 26 54 Z" fill="black" fillOpacity="0.15" stroke="black" strokeWidth="2" />
+      <circle cx="72" cy="28" r="16" fill="#fad403" stroke="black" strokeWidth="4" />
       <path d="M86 28 L100 24 L100 34 Z" fill="black" />
       <circle cx="76" cy="23" r="2.5" fill="black" />
     </svg>
   )
 }
+
+// Gentle horizontal wave-line texture tiled across the water, matching the
+// reference video's calm-river look. A small inline SVG data URI (no asset
+// file needed) rather than a static image, so it's trivial to retint/resize.
+const WAVE_TILE = `data:image/svg+xml,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='120' height='24'><path d='M0 12 Q30 2 60 12 T120 12' stroke='white' stroke-opacity='0.22' stroke-width='2' fill='none'/></svg>"
+)}`
+
+// Diagonal checkered "finish gate" cutting across the whole river, matching
+// the reference video's angled stripe (not a vertical strip at the very
+// edge). One shared strip spans every lane, not one per duck.
+const CHECKER_PATTERN = {
+  backgroundImage:
+    'linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%), linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%)',
+  backgroundSize: '8px 8px',
+  backgroundPosition: '0 0, 4px 4px',
+  backgroundColor: 'white',
+} as const
 
 export default function DuckRacePage() {
   const [loading, setLoading] = useState(true)
@@ -105,20 +123,29 @@ export default function DuckRacePage() {
       }
 
       const prize: PlayResultPrize = data.prize
-      // Winner's lane always finishes in exactly 3.2s. Every other lane gets an
-      // independently randomized duration between 3.6s and 4.6s, so the winner
-      // always crosses first (0.4s of guaranteed daylight over the fastest
-      // possible non-winner) but the field doesn't look mechanically identical.
+      // Winner's lane always finishes in exactly WINNER_DURATION seconds. Every
+      // other lane gets an independently randomized duration up to 3.4s slower,
+      // so the winner always crosses first (a guaranteed minimum gap over the
+      // fastest possible non-winner) but the field doesn't look mechanically
+      // identical. Deliberately slow (8s+) so the race builds real suspense
+      // instead of resolving almost instantly.
+      const WINNER_DURATION = 8
       const durations = new Map<number, number>()
       for (const p of prizes) {
-        durations.set(p.displayOrder, p.displayOrder === prize.displayOrder ? 3.2 : 3.6 + Math.random())
+        durations.set(p.displayOrder, p.displayOrder === prize.displayOrder ? WINNER_DURATION : WINNER_DURATION + 0.4 + Math.random() * 3)
       }
       setLaneDurations(durations)
 
-      // Reveal at the winner's own finish (always exactly 3.2s, see the
-      // duration-assignment above), not when the whole field settles --
-      // non-winning lanes run 3.6-4.6s, so waiting for the slowest duck
-      // would hide the "winner crosses first" moment that's the entire
+      // Synthesized crowd cheering for the length of the race -- naturally
+      // stops itself when its buffer runs out (matched to the same duration
+      // as the reveal timeout below), so no explicit cancel call is needed
+      // on the happy path.
+      scheduleCrowdCheer(WINNER_DURATION * 1000 + 200)
+
+      // Reveal at the winner's own finish (always exactly WINNER_DURATION
+      // seconds, see the duration-assignment above), not when the whole field
+      // settles -- non-winning lanes run longer, so waiting for the slowest
+      // duck would hide the "winner crosses first" moment that's the entire
       // visual point of the race.
       window.setTimeout(() => {
         setResult(prize)
@@ -130,7 +157,7 @@ export default function DuckRacePage() {
           .catch(() => {
             // A failed background refresh shouldn't interrupt the result the player just saw.
           })
-      }, 3.2 * 1000 + 200)
+      }, WINNER_DURATION * 1000 + 200)
     } catch (err: any) {
       setPlayError(err.message || 'Something went wrong — please try again.')
       setRacing(false)
@@ -182,60 +209,80 @@ export default function DuckRacePage() {
         {prizes.length === 0 ? (
           <p className="text-sm text-white/70 text-center py-16">No prizes configured yet.</p>
         ) : (
-          <div className="flex flex-col gap-3">
-            {prizes.map((prize, i) => {
-              const duration = laneDurations.get(prize.displayOrder)
-              return (
-                <div
-                  key={prize.id}
-                  data-duck-lane={prize.displayOrder}
-                  className="relative h-16 rounded-lg bg-[#fad403] border-2 border-black overflow-hidden"
-                >
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
-                    style={{
-                      // Gated on `duration !== undefined`, NOT on `racing` -- `racing` flips
-                      // true synchronously at the top of handleRace, before the fetch
-                      // resolves and real per-lane durations exist. Gating on `racing`
-                      // would move `left` to 84% immediately with transitionDuration still
-                      // at its default (0s, since `duration` is undefined that render),
-                      // snapping every duck to the finish line instantly before the "real"
-                      // race even starts. `laneDurations` starts empty and is only
-                      // populated after the fetch resolves, so checking a specific lane's
-                      // entry is the correct signal that it's safe to move.
-                      left: duration !== undefined ? '84%' : '2%',
-                      width: '15%',
-                      transitionProperty: 'left',
-                      transitionDuration: `${duration ?? 0}s`,
-                      transitionTimingFunction: 'linear',
-                    }}
-                  >
+          <div className="relative rounded-xl overflow-hidden border-2 border-black">
+            {/* Grass shore, matching the reference video's river-bank strip. */}
+            <div className="relative h-7 bg-gradient-to-b from-[#5fc23f] to-[#4aa832] border-b-4 border-[#6b4226]">
+              <div className="absolute bottom-0 left-[10%] h-3 w-3 rounded-full bg-[#3f8f2a]/70" />
+              <div className="absolute bottom-0 left-[55%] h-2.5 w-2.5 rounded-full bg-[#3f8f2a]/70" />
+              <div className="absolute bottom-0 left-[80%] h-3 w-3 rounded-full bg-[#3f8f2a]/70" />
+            </div>
+
+            {/* One continuous river -- every duck races in the same shared
+                water, not separate per-duck lanes, matching the reference.
+                All three visual layers (two wave-line tiles + the base
+                gradient) live in ONE backgroundImage property with matching
+                comma-separated size/position/repeat lists -- mixing the
+                `background` shorthand with a separate `backgroundImage`
+                longhand here previously caused the size/repeat meant for the
+                small wave tiles to apply to the gradient instead (since the
+                shorthand and longhand fight over the same underlying
+                background-image property), painting only a thin repeating
+                band instead of a full-height gradient. */}
+            <div
+              className="relative"
+              style={{
+                backgroundImage: `url("${WAVE_TILE}"), url("${WAVE_TILE}"), linear-gradient(180deg, #4a9cc7 0%, #2f7aa5 100%)`,
+                backgroundSize: '120px 24px, 160px 24px, 100% 100%',
+                backgroundPosition: '0 20%, 30px 65%, 0 0',
+                backgroundRepeat: 'repeat-x, repeat-x, no-repeat',
+              }}
+            >
+              {/* Diagonal checkered finish gate, angled like the reference
+                  rather than a flat vertical strip at the edge. */}
+              <div
+                className="absolute z-10"
+                style={{ left: '76%', top: '-30%', width: 16, height: '160%', transform: 'rotate(18deg)', ...CHECKER_PATTERN }}
+              />
+
+              {prizes.map((prize, i) => {
+                const duration = laneDurations.get(prize.displayOrder)
+                return (
+                  <div key={prize.id} data-duck-lane={prize.displayOrder} className="relative h-16">
                     <div
+                      className="absolute top-1/2 -translate-y-1/2 pointer-events-none z-20"
                       style={{
-                        animation: 'duck-bob 0.5s ease-in-out infinite alternate',
-                        animationDelay: `${i * 0.13}s`,
+                        // Gated on `duration !== undefined`, NOT on `racing` -- `racing` flips
+                        // true synchronously at the top of handleRace, before the fetch
+                        // resolves and real per-lane durations exist. Gating on `racing`
+                        // would move `left` to 84% immediately with transitionDuration still
+                        // at its default (0s, since `duration` is undefined that render),
+                        // snapping every duck to the finish line instantly before the "real"
+                        // race even starts. `laneDurations` starts empty and is only
+                        // populated after the fetch resolves, so checking a specific lane's
+                        // entry is the correct signal that it's safe to move.
+                        left: duration !== undefined ? '84%' : '2%',
+                        width: '15%',
+                        transitionProperty: 'left',
+                        transitionDuration: `${duration ?? 0}s`,
+                        transitionTimingFunction: 'linear',
                       }}
                     >
-                      <Duck className="w-full h-auto" />
+                      <div
+                        style={{
+                          animation: 'duck-bob 0.5s ease-in-out infinite alternate',
+                          animationDelay: `${i * 0.13}s`,
+                        }}
+                      >
+                        <Duck className="w-full h-auto" />
+                      </div>
                     </div>
+                    <span className="absolute right-6 top-1/2 -translate-y-1/2 z-20 rounded-full bg-white px-3 py-1 text-xs font-bold text-black border border-black">
+                      {prize.name}
+                    </span>
                   </div>
-                  {/* Checkered finish line. */}
-                  <div
-                    className="absolute right-0 top-0 h-full w-3"
-                    style={{
-                      backgroundImage:
-                        'linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%), linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%)',
-                      backgroundSize: '8px 8px',
-                      backgroundPosition: '0 0, 4px 4px',
-                      backgroundColor: 'white',
-                    }}
-                  />
-                  <span className="absolute right-6 top-1/2 -translate-y-1/2 rounded-full bg-white px-3 py-1 text-xs font-bold text-black border border-black">
-                    {prize.name}
-                  </span>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         )}
 

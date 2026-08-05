@@ -120,6 +120,111 @@ export function playConfettiPop() {
   })
 }
 
+// A synthesized ambient crowd -- a continuous filtered-noise murmur plus
+// scattered short "shout" bursts -- played during a race to build suspense.
+// No recorded crowd samples; same noise-buffer + biquad-filter approach as
+// playConfettiPop's noise burst, just longer and layered. Returns a cancel
+// function so the caller can stop it early if the race ends sooner than
+// expected (or is interrupted).
+export function scheduleCrowdCheer(durationMs: number): () => void {
+  const audioCtx = getContext()
+  if (!audioCtx) return () => {}
+  const now = audioCtx.currentTime
+  const durationSec = durationMs / 1000
+  const activeNodes: AudioScheduledSourceNode[] = []
+  const timers: number[] = []
+  let stopped = false
+
+  // Continuous ambient murmur: one long buffer of filtered noise, gently
+  // faded in/out, standing in for "distant crowd" underneath the shouts.
+  const bufferSize = Math.floor(audioCtx.sampleRate * durationSec)
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1
+  }
+  const murmurSource = audioCtx.createBufferSource()
+  murmurSource.buffer = buffer
+
+  const murmurFilter = audioCtx.createBiquadFilter()
+  murmurFilter.type = 'bandpass'
+  murmurFilter.frequency.setValueAtTime(500, now)
+  murmurFilter.Q.setValueAtTime(0.6, now)
+
+  const murmurGain = audioCtx.createGain()
+  const fadeIn = Math.min(0.5, durationSec * 0.15)
+  const fadeOut = Math.min(0.6, durationSec * 0.2)
+  murmurGain.gain.setValueAtTime(0.0001, now)
+  murmurGain.gain.exponentialRampToValueAtTime(0.05, now + fadeIn)
+  murmurGain.gain.setValueAtTime(0.05, now + Math.max(fadeIn, durationSec - fadeOut))
+  murmurGain.gain.exponentialRampToValueAtTime(0.0001, now + durationSec)
+
+  murmurSource.connect(murmurFilter)
+  murmurFilter.connect(murmurGain)
+  murmurGain.connect(audioCtx.destination)
+  murmurSource.start(now)
+  murmurSource.stop(now + durationSec)
+  activeNodes.push(murmurSource)
+
+  // Individual "shout" bursts scattered across the race -- short bandpass-
+  // filtered noise pops at randomized pitch/timing, reading as scattered
+  // cheers on top of the ambient murmur.
+  function shout() {
+    const shoutCtx = getContext()
+    if (!shoutCtx) return
+    const t = shoutCtx.currentTime
+    const shoutDuration = 0.15 + Math.random() * 0.15
+
+    const shoutBufferSize = Math.floor(shoutCtx.sampleRate * shoutDuration)
+    const shoutBuffer = shoutCtx.createBuffer(1, shoutBufferSize, shoutCtx.sampleRate)
+    const shoutData = shoutBuffer.getChannelData(0)
+    for (let i = 0; i < shoutBufferSize; i++) {
+      shoutData[i] = (Math.random() * 2 - 1) * (1 - i / shoutBufferSize)
+    }
+    const shoutSource = shoutCtx.createBufferSource()
+    shoutSource.buffer = shoutBuffer
+
+    const shoutFilter = shoutCtx.createBiquadFilter()
+    shoutFilter.type = 'bandpass'
+    shoutFilter.frequency.setValueAtTime(300 + Math.random() * 700, t)
+    shoutFilter.Q.setValueAtTime(1.5, t)
+
+    const shoutGain = shoutCtx.createGain()
+    shoutGain.gain.setValueAtTime(0.0001, t)
+    shoutGain.gain.exponentialRampToValueAtTime(0.12 + Math.random() * 0.08, t + 0.02)
+    shoutGain.gain.exponentialRampToValueAtTime(0.0001, t + shoutDuration)
+
+    shoutSource.connect(shoutFilter)
+    shoutFilter.connect(shoutGain)
+    shoutGain.connect(shoutCtx.destination)
+    shoutSource.start(t)
+    shoutSource.stop(t + shoutDuration)
+  }
+
+  const start = performance.now()
+  function scheduleNextShout() {
+    if (stopped) return
+    const elapsed = performance.now() - start
+    if (elapsed >= durationMs - 300) return // no new shouts right at the very end
+    shout()
+    const nextIn = 200 + Math.random() * 350
+    timers.push(window.setTimeout(scheduleNextShout, nextIn))
+  }
+  timers.push(window.setTimeout(scheduleNextShout, 150))
+
+  return () => {
+    stopped = true
+    for (const id of timers) window.clearTimeout(id)
+    for (const node of activeNodes) {
+      try {
+        node.stop()
+      } catch {
+        // Already stopped naturally -- fine to ignore.
+      }
+    }
+  }
+}
+
 // A short ascending four-note chime for a win reveal.
 export function playWinChime() {
   const audioCtx = getContext()
