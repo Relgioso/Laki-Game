@@ -3,7 +3,8 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { playWinChime, scheduleSpinTicks } from '@/lib/sound'
+import { playConfettiPop, playWinChime, scheduleSpinTicks } from '@/lib/sound'
+import { launchConfetti } from '@/lib/confetti'
 
 type WheelPrize = {
   id: string
@@ -76,6 +77,9 @@ export default function PlayWheelPage() {
 
   // Direct-DOM pointer flick (no React remount) — see handleSpin/scheduleSpinTicks.
   const pointerInnerRef = useRef<HTMLDivElement>(null)
+  // Confetti draws directly to this canvas (see the `result` effect below) —
+  // canvas manipulation doesn't go through React state/re-renders.
+  const confettiCanvasRef = useRef<HTMLCanvasElement>(null)
 
   const loadConfig = useCallback(async () => {
     const res = await fetch('/api/wheel/config')
@@ -104,6 +108,19 @@ export default function PlayWheelPage() {
       cancelled = true
     }
   }, [loadConfig])
+
+  // Fires the confetti burst once the reveal overlay (and its canvas) is
+  // actually mounted -- can't launch it synchronously from handleSpin's
+  // setTimeout, since setResult()'s render (which mounts the canvas) hasn't
+  // happened yet at that point. The sound effect has no such ordering
+  // requirement, so it's still triggered directly in handleSpin.
+  useEffect(() => {
+    if (!result) return
+    const canvas = confettiCanvasRef.current
+    if (!canvas) return
+    const cancel = launchConfetti(canvas)
+    return cancel
+  }, [result])
 
   // Fixed visual slots: displayOrder 0..slotCount-1, each rendered as an equal wedge,
   // regardless of how many prizes are actually configured (unused slots render blank).
@@ -181,6 +198,7 @@ export default function PlayWheelPage() {
         setResult(prize)
         setSpinning(false)
         playWinChime()
+        playConfettiPop()
         loadConfig()
           .then((data) => {
             setSlotCount(data.slotCount)
@@ -450,6 +468,10 @@ export default function PlayWheelPage() {
           <p className="text-sm text-white/70 mb-1">You won</p>
           <p className="text-3xl font-extrabold text-[#fad403] text-center">{result.name}</p>
           <p className="mt-8 text-xs text-white/50">Tap anywhere to continue</p>
+
+          {/* Confetti draws on top of everything above (falls over the photo/
+              text), not behind it -- last child, no extra z-index needed. */}
+          <canvas ref={confettiCanvasRef} className="pointer-events-none absolute inset-0" />
         </button>
       )}
     </div>

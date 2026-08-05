@@ -68,6 +68,58 @@ export function scheduleSpinTicks(durationMs: number, onTick?: () => void): () =
   }
 }
 
+// A short "pop" burst (like a party popper) plus a few high crackle ticks,
+// played alongside the confetti visual and the win chime on reveal.
+export function playConfettiPop() {
+  const audioCtx = getContext()
+  if (!audioCtx) return
+  const now = audioCtx.currentTime
+
+  // Noise burst: a short buffer of random samples with a fast linear decay,
+  // high-passed so it reads as a airy "pfft" rather than a dull thump.
+  const duration = 0.25
+  const bufferSize = Math.floor(audioCtx.sampleRate * duration)
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize)
+  }
+
+  const noise = audioCtx.createBufferSource()
+  noise.buffer = buffer
+
+  const filter = audioCtx.createBiquadFilter()
+  filter.type = 'highpass'
+  filter.frequency.setValueAtTime(800, now)
+
+  const gain = audioCtx.createGain()
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.35, now + 0.01)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+
+  noise.connect(filter)
+  filter.connect(gain)
+  gain.connect(audioCtx.destination)
+  noise.start(now)
+  noise.stop(now + duration)
+
+  // A few quick high "crackle" ticks scattered right after the pop, for a
+  // multi-piece confetti feel rather than one flat burst.
+  ;[0.05, 0.09, 0.14].forEach((delay) => {
+    const osc = audioCtx.createOscillator()
+    const g = audioCtx.createGain()
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(1800 + Math.random() * 800, now + delay)
+    g.gain.setValueAtTime(0.0001, now + delay)
+    g.gain.exponentialRampToValueAtTime(0.08, now + delay + 0.005)
+    g.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.05)
+    osc.connect(g)
+    g.connect(audioCtx.destination)
+    osc.start(now + delay)
+    osc.stop(now + delay + 0.06)
+  })
+}
+
 // A short ascending four-note chime for a win reveal.
 export function playWinChime() {
   const audioCtx = getContext()
