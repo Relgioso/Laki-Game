@@ -26,11 +26,17 @@ export default function SiteHeader() {
         <Link href="/admin/color-game" className="hover:underline">
           Admin: Color Game
         </Link>
+        <Link href="/admin/duck-race" className="hover:underline">
+          Admin: Duck Race
+        </Link>
         <Link href="/play/wheel" className="hover:underline">
           Play: Wheel
         </Link>
         <Link href="/play/color-game" className="hover:underline">
           Play: Color Game
+        </Link>
+        <Link href="/play/duck-race" className="hover:underline">
+          Play: Duck Race
         </Link>
       </nav>
     </header>
