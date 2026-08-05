@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { playConfettiPop, playWinChime, scheduleSpinTicks } from '@/lib/sound'
 import { launchConfetti } from '@/lib/confetti'
+import { prizePhotoFor } from '@/lib/prize-photos'
 
 type WheelPrize = {
   id: string
@@ -25,21 +26,6 @@ type PlayResultPrize = {
 
 // Number of full rotations to add on top of the landing angle, purely for animation flair.
 const EXTRA_SPINS = 5
-
-// Real product photos for prizes that have one. Matched by normalized name
-// (lowercase, spaces stripped) against the prize's configured name in the
-// admin screen — a prize without a matching entry here just shows its name
-// as text in the reveal, no photo.
-const PRIZE_PHOTOS: Record<string, string> = {
-  totebag: '/prizes/totebag-prize.png',
-  coinpurse: '/prizes/coin-purse-prize.png',
-  roundfan: '/prizes/round-fan-prize.png',
-}
-
-function prizePhotoFor(name: string): string | null {
-  const key = name.toLowerCase().replace(/\s+/g, '')
-  return PRIZE_PHOTOS[key] ?? null
-}
 
 // wheelbg_01.png is 1080x1920. Its black circle was measured directly from the
 // asset (pixel-scanned, not eyeballed): center at (539, 824), radius 505 --
