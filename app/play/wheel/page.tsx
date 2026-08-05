@@ -54,6 +54,14 @@ const CIRCLE_CENTER_X_PCT = 49.91
 const CIRCLE_CENTER_Y_PCT = 42.92
 const CIRCLE_RADIUS_PCT = 46.76
 
+// SPIN button lives inside the same aspect-locked container as the wheel (not in a
+// separate section below it), sitting in the art's own dark fade zone beneath the
+// wheel. Position/size as percentages of the container, same reasoning as CIRCLE_*
+// above -- this also removes the extra section that was pushing total page height
+// past the viewport (the original "have to scroll to reach it" bug).
+const SPIN_BUTTON_TOP_PCT = 79
+const SPIN_BUTTON_WIDTH_PCT = 46
+
 export default function PlayWheelPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -216,10 +224,15 @@ export default function PlayWheelPage() {
 
   return (
     <div className="relative flex flex-1 flex-col items-center bg-[#1a0f00]">
+      {/* Capped to a phone-sized column so this doesn't balloon to full browser
+          width (and therefore full browser HEIGHT, via the aspect-ratio lock
+          below) on desktop -- that was making the whole page enormous there. */}
+      <div className="relative w-full max-w-md">
       {/* Aspect-ratio-locked block containing the background art and everything
-          that must stay pixel-aligned with it (header buttons, wheel, pointer).
-          See the BG_ASPECT_RATIO/CIRCLE_* comment above -- this is what makes
-          the wheel land exactly on the art's circle at any viewport width. */}
+          that must stay pixel-aligned with it (header buttons, wheel, pointer,
+          and now the SPIN button too). See the BG_ASPECT_RATIO, CIRCLE_,
+          and SPIN_BUTTON_ constants above -- this is what makes them land
+          exactly on the art at any viewport width. */}
       <div className="relative w-full" style={{ aspectRatio: `${BG_ASPECT_RATIO}` }}>
         <Image src="/wheel/wheelbg_01.png" alt="" fill className="object-contain object-top" priority />
 
@@ -379,26 +392,31 @@ export default function PlayWheelPage() {
             <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
           </div>
         </div>
-      </div>
 
-      {/* Below the aspect-locked art block: SPIN button + error banner, in the
-          dark fade-to-black zone, same as the reference design. Not tied to the
-          circle's percentages since it just flows naturally beneath it. */}
-      <div className="relative z-10 flex w-full flex-1 flex-col items-center px-6 pt-6 pb-16">
-        <button
-          type="button"
-          onClick={handleSpin}
-          disabled={spinning}
-          className="relative w-56 disabled:opacity-70"
+        {/* SPIN button, positioned inside the art's own dark fade zone below the
+            wheel (SPIN_BUTTON_* percentages above) instead of a separate section
+            after this container -- that extra section was what pushed the page
+            past one screen's height. */}
+        <div
+          className="absolute z-10"
+          style={{
+            left: '50%',
+            top: `${SPIN_BUTTON_TOP_PCT}%`,
+            width: `${SPIN_BUTTON_WIDTH_PCT}%`,
+            transform: 'translate(-50%, 0)',
+          }}
         >
-          <Image src="/wheel/spin_button.svg" alt={spinning ? 'Spinning…' : 'Spin'} width={1238} height={403} className="w-full h-auto" priority />
-        </button>
+          <button type="button" onClick={handleSpin} disabled={spinning} className="relative w-full disabled:opacity-70">
+            <Image src="/wheel/spin_button.svg" alt={spinning ? 'Spinning…' : 'Spin'} width={1238} height={403} className="w-full h-auto" priority />
+          </button>
 
-        {playError && (
-          <div className="relative z-10 mt-6 w-full max-w-sm rounded-lg border border-red-900 bg-red-950/90 p-3 text-sm text-red-200 text-center">
-            {playError}
-          </div>
-        )}
+          {playError && (
+            <div className="absolute left-1/2 top-full mt-3 w-64 -translate-x-1/2 rounded-lg border border-red-900 bg-red-950/90 p-3 text-xs text-red-200 text-center">
+              {playError}
+            </div>
+          )}
+        </div>
+      </div>
       </div>
 
       {/* Full-screen win reveal -- covers the wheel entirely (not a small overlay
