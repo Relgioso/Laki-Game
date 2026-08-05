@@ -233,7 +233,7 @@ export default function PlayWheelPage() {
           and now the SPIN button too). See the BG_ASPECT_RATIO, CIRCLE_,
           and SPIN_BUTTON_ constants above -- this is what makes them land
           exactly on the art at any viewport width. */}
-      <div className="relative w-full" style={{ aspectRatio: `${BG_ASPECT_RATIO}` }}>
+      <div className="relative w-full" style={{ aspectRatio: `${BG_ASPECT_RATIO}`, containerType: 'inline-size' }}>
         <Image src="/wheel/wheelbg_01.png" alt="" fill className="object-contain object-top" priority />
 
         {/* Top fade band so the corner buttons stay legible against the bright background. */}
@@ -308,20 +308,25 @@ export default function PlayWheelPage() {
                     style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
                   >
                     <span
-                      className="absolute text-[2.6vw] sm:text-[9px] font-bold text-black px-1 text-center leading-tight whitespace-nowrap"
+                      className="absolute text-[3.2cqw] sm:text-[11px] font-bold text-black px-1 text-center leading-tight whitespace-nowrap"
                       style={{
                         // The immediate parent here is a 0x0 rotation-anchor div
                         // (width/height:0, by design, to rotate around a point) --
                         // a percentage top/width would resolve against that zero
                         // size and collapse to 0, not the wheel's actual size. Use
-                        // vw instead: the aspect-locked container above is 100vw
-                        // wide, and the wheel's own radius is CIRCLE_RADIUS_PCT of
-                        // that, so vw scales together with the wheel on any device.
-                        top: '-27vw',
+                        // container query units (cqw) instead: the aspect-locked
+                        // container above has containerType: 'inline-size', so 1cqw
+                        // is 1% of THAT container's actual rendered width -- unlike
+                        // vw (100% of the whole browser viewport), this stays correct
+                        // now that the page is capped to max-w-md on desktop, where
+                        // the container is narrower than the viewport. Plain vw broke
+                        // this: labels rendered ~2x the wheel's radius away from
+                        // center on desktop, off-screen in some directions.
+                        top: '-27cqw',
                         left: 0,
                         transform: 'translateX(-50%)',
                         display: 'inline-block',
-                        width: '24vw',
+                        width: '24cqw',
                       }}
                     >
                       {prize ? prize.name : ''}
@@ -362,20 +367,25 @@ export default function PlayWheelPage() {
                     style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
                   >
                     <span
-                      className="absolute text-[2.6vw] sm:text-[9px] font-bold text-black px-1 text-center leading-tight whitespace-nowrap"
+                      className="absolute text-[3.2cqw] sm:text-[11px] font-bold text-black px-1 text-center leading-tight whitespace-nowrap"
                       style={{
                         // The immediate parent here is a 0x0 rotation-anchor div
                         // (width/height:0, by design, to rotate around a point) --
                         // a percentage top/width would resolve against that zero
                         // size and collapse to 0, not the wheel's actual size. Use
-                        // vw instead: the aspect-locked container above is 100vw
-                        // wide, and the wheel's own radius is CIRCLE_RADIUS_PCT of
-                        // that, so vw scales together with the wheel on any device.
-                        top: '-27vw',
+                        // container query units (cqw) instead: the aspect-locked
+                        // container above has containerType: 'inline-size', so 1cqw
+                        // is 1% of THAT container's actual rendered width -- unlike
+                        // vw (100% of the whole browser viewport), this stays correct
+                        // now that the page is capped to max-w-md on desktop, where
+                        // the container is narrower than the viewport. Plain vw broke
+                        // this: labels rendered ~2x the wheel's radius away from
+                        // center on desktop, off-screen in some directions.
+                        top: '-27cqw',
                         left: 0,
                         transform: 'translateX(-50%)',
                         display: 'inline-block',
-                        width: '24vw',
+                        width: '24cqw',
                       }}
                     >
                       {prize ? prize.name : ''}
