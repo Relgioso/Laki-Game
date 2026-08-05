@@ -40,6 +40,20 @@ function prizePhotoFor(name: string): string | null {
   return PRIZE_PHOTOS[key] ?? null
 }
 
+// wheelbg_01.png is 1080x1920. Its black circle was measured directly from the
+// asset (pixel-scanned, not eyeballed): center at (539, 824), radius 505 --
+// i.e. 49.91% / 42.92% of the image's width/height, radius 46.76% of its width.
+// The background is rendered at its own true aspect ratio (never CSS
+// background-size:cover, which crops unpredictably per device and was the
+// actual cause of the wheel not lining up with the art's circle) inside an
+// aspect-ratio-locked container, and the wheel/pointer are positioned as
+// percentages of that SAME container -- so they stay pixel-aligned with the
+// art at any viewport width, not just the one this happened to be eyeballed on.
+const BG_ASPECT_RATIO = 1080 / 1920
+const CIRCLE_CENTER_X_PCT = 49.91
+const CIRCLE_CENTER_Y_PCT = 42.92
+const CIRCLE_RADIUS_PCT = 46.76
+
 export default function PlayWheelPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -129,16 +143,17 @@ export default function PlayWheelPage() {
       }
 
       const prize: PlayResultPrize = data.prize
-      // The pointer is fixed at the top (12 o'clock). Segment `displayOrder` is drawn
-      // starting at angle `displayOrder * segmentAngle` (clockwise from the top, in the
-      // wheel's own un-rotated frame), so its center sits at
-      // `displayOrder * segmentAngle + segmentAngle / 2`. After rotating the wheel by
-      // `rotation` degrees, that center appears on screen at `(targetCenter + rotation) mod 360`.
-      // We need that to land on 0 (the pointer), so `rotation mod 360` must equal
-      // `(360 - targetCenter) mod 360` — call that the desired mod. We then pick the
-      // smallest forward delta from the wheel's current mod to the desired mod and add a
-      // few extra full spins on top, purely for animation flair.
-      const targetCenter = prize.displayOrder * segmentAngle + segmentAngle / 2
+      // The pointer is fixed at the top (12 o'clock). Segment `displayOrder`'s wedge is
+      // centered at angle `displayOrder * segmentAngle` in the wheel's own un-rotated
+      // frame (dividers fall at the odd half-angles between them, `+ segmentAngle / 2`
+      // — verified against the actual wheel_6slice.svg art via pixel sampling, not
+      // assumed). After rotating the wheel by `rotation` degrees, that center appears
+      // on screen at `(targetCenter + rotation) mod 360`. We need that to land on 0
+      // (the pointer), so `rotation mod 360` must equal `(360 - targetCenter) mod 360`
+      // — call that the desired mod. We then pick the smallest forward delta from the
+      // wheel's current mod to the desired mod and add a few extra full spins on top,
+      // purely for animation flair.
+      const targetCenter = prize.displayOrder * segmentAngle
       const desiredMod = ((360 - targetCenter) % 360 + 360) % 360
       setRotation((prev) => {
         const prevMod = ((prev % 360) + 360) % 360
@@ -191,7 +206,6 @@ export default function PlayWheelPage() {
     )
   }
 
-  const wheelSize = 320
   // The provided wheel_6slice.svg asset is a fixed 6-slice design — strictly
   // following it (rather than a generic N-slice approximation) means using it
   // as-is. Locked to 6 for now, per instruction; 8/10/12 will get their own
@@ -201,50 +215,57 @@ export default function PlayWheelPage() {
   const usingSixSliceArt = slotCount === 6
 
   return (
-    <div
-      className="relative flex flex-1 flex-col items-center overflow-hidden px-6 pt-8 pb-16"
-      style={{
-        backgroundImage: 'url(/wheel/wheelbg_01.png)',
-        backgroundSize: 'cover',
-        backgroundPosition: 'center top',
-        backgroundColor: '#1a0f00',
-      }}
-    >
-      {/* Top fade band so the corner buttons stay legible against the bright background. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/45 to-transparent" />
+    <div className="relative flex flex-1 flex-col items-center bg-[#1a0f00]">
+      {/* Aspect-ratio-locked block containing the background art and everything
+          that must stay pixel-aligned with it (header buttons, wheel, pointer).
+          See the BG_ASPECT_RATIO/CIRCLE_* comment above -- this is what makes
+          the wheel land exactly on the art's circle at any viewport width. */}
+      <div className="relative w-full" style={{ aspectRatio: `${BG_ASPECT_RATIO}` }}>
+        <Image src="/wheel/wheelbg_01.png" alt="" fill className="object-contain object-top" priority />
 
-      <div className="relative z-10 w-full flex items-center justify-between">
-        <Link
-          href="/"
-          aria-label="Back"
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
-        >
-          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5M5 12l6-6M5 12l6 6" />
-          </svg>
-        </Link>
-        <Link
-          href="/admin/wheel"
-          aria-label="Manage prizes"
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
-        >
-          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round">
-            <path d="M4 7h16M4 12h16M4 17h16" />
-          </svg>
-        </Link>
-      </div>
+        {/* Top fade band so the corner buttons stay legible against the bright background. */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[14%] bg-gradient-to-b from-black/45 to-transparent" />
 
-      {/* justify-start (not center) deliberately -- the wheel's vertical position
-          must stay fixed regardless of whether the error/result banners below are
-          showing. Centering the whole group would shift the wheel up/down every
-          time a banner appears or disappears, which read as the wheel "jumping." */}
-      <div className="relative z-10 mt-10 flex flex-1 flex-col items-center">
-        <div className="relative" style={{ width: wheelSize, height: wheelSize }}>
+        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-[4%]">
+          <Link
+            href="/"
+            aria-label="Back"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M5 12l6-6M5 12l6 6" />
+            </svg>
+          </Link>
+          <Link
+            href="/admin/wheel"
+            aria-label="Manage prizes"
+            className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </Link>
+        </div>
+
+        {/* Wheel + pointer + hub, sized/positioned as percentages of this same
+            aspect-locked container so they always land exactly on the
+            background art's circle (measured center/radius above). */}
+        <div
+          className="absolute z-10"
+          style={{
+            left: `${CIRCLE_CENTER_X_PCT}%`,
+            top: `${CIRCLE_CENTER_Y_PCT}%`,
+            width: `${CIRCLE_RADIUS_PCT * 2}%`,
+            aspectRatio: '1',
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
           {/* Pointer, fixed at the top, pointing down into the wheel. Doesn't rotate
               with the wheel, but flicks back on each tick (see flickPointer) to feel
               like a real physical pointer being pushed by each divider as it passes
-              underneath. */}
-          <div className="absolute left-1/2 z-20" style={{ top: -34, width: 46, transform: 'translateX(-50%)' }}>
+              underneath. Sized/positioned relative to the wheel's own box (%), not
+              fixed pixels, so it scales together with the wheel on any device. */}
+          <div className="absolute left-1/2 z-20" style={{ top: '-11%', width: '15%', transform: 'translateX(-50%)' }}>
             <div ref={pointerInnerRef} style={{ transformOrigin: '50% 15%' }}>
               <Image src="/wheel/pointer.svg" alt="" width={386} height={566} className="w-full h-auto" />
             </div>
@@ -253,19 +274,20 @@ export default function PlayWheelPage() {
           {/* Rotating wheel. */}
           {usingSixSliceArt ? (
             <div
-              className="relative rounded-full"
+              className="relative w-full h-full rounded-full"
               style={{
-                width: wheelSize,
-                height: wheelSize,
                 transform: `rotate(${rotation}deg)`,
                 transition: 'transform 4s cubic-bezier(0.17, 0.67, 0.2, 1)',
               }}
             >
               <Image src="/wheel/wheel_6slice.svg" alt="" width={2011} height={2011} className="w-full h-full" priority />
 
-              {/* Prize labels, one per wedge, oriented radially outward from center. */}
+              {/* Prize labels, one per wedge, oriented radially outward from center.
+                  Wedge centers sit at `i * segmentAngle` (no half-offset) — verified
+                  via pixel sampling against wheel_6slice.svg; dividers, not wedge
+                  centers, are the ones at the +half-angle positions. */}
               {segments.map((prize, i) => {
-                const centerAngle = i * segmentAngle + segmentAngle / 2
+                const centerAngle = i * segmentAngle
                 return (
                   <div
                     key={`label-${i}`}
@@ -273,13 +295,20 @@ export default function PlayWheelPage() {
                     style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
                   >
                     <span
-                      className="absolute text-[11px] font-bold text-black px-1 text-center leading-tight"
+                      className="absolute text-[2.6vw] sm:text-[9px] font-bold text-black px-1 text-center leading-tight whitespace-nowrap"
                       style={{
-                        top: -(wheelSize / 2 - 40),
+                        // The immediate parent here is a 0x0 rotation-anchor div
+                        // (width/height:0, by design, to rotate around a point) --
+                        // a percentage top/width would resolve against that zero
+                        // size and collapse to 0, not the wheel's actual size. Use
+                        // vw instead: the aspect-locked container above is 100vw
+                        // wide, and the wheel's own radius is CIRCLE_RADIUS_PCT of
+                        // that, so vw scales together with the wheel on any device.
+                        top: '-27vw',
                         left: 0,
                         transform: 'translateX(-50%)',
                         display: 'inline-block',
-                        width: 84,
+                        width: '24vw',
                       }}
                     >
                       {prize ? prize.name : ''}
@@ -290,10 +319,8 @@ export default function PlayWheelPage() {
             </div>
           ) : (
             <div
-              className="relative rounded-full"
+              className="relative w-full h-full rounded-full"
               style={{
-                width: wheelSize,
-                height: wheelSize,
                 background: '#fad403',
                 border: '8px solid #1a1a1a',
                 boxShadow: '0 6px 16px rgba(0,0,0,0.4)',
@@ -307,14 +334,14 @@ export default function PlayWheelPage() {
                   className="absolute left-1/2 top-1/2 origin-top"
                   style={{
                     width: 3,
-                    height: wheelSize / 2 - 8,
+                    height: '50%',
                     background: '#1a1a1a',
-                    transform: `translate(-50%, 0) rotate(${i * segmentAngle}deg)`,
+                    transform: `translate(-50%, 0) rotate(${i * segmentAngle + segmentAngle / 2}deg)`,
                   }}
                 />
               ))}
               {segments.map((prize, i) => {
-                const centerAngle = i * segmentAngle + segmentAngle / 2
+                const centerAngle = i * segmentAngle
                 return (
                   <div
                     key={`label-${i}`}
@@ -322,13 +349,20 @@ export default function PlayWheelPage() {
                     style={{ width: 0, height: 0, transform: `rotate(${centerAngle}deg)` }}
                   >
                     <span
-                      className="absolute text-[11px] font-bold text-black px-1 text-center leading-tight"
+                      className="absolute text-[2.6vw] sm:text-[9px] font-bold text-black px-1 text-center leading-tight whitespace-nowrap"
                       style={{
-                        top: -(wheelSize / 2 - 40),
+                        // The immediate parent here is a 0x0 rotation-anchor div
+                        // (width/height:0, by design, to rotate around a point) --
+                        // a percentage top/width would resolve against that zero
+                        // size and collapse to 0, not the wheel's actual size. Use
+                        // vw instead: the aspect-locked container above is 100vw
+                        // wide, and the wheel's own radius is CIRCLE_RADIUS_PCT of
+                        // that, so vw scales together with the wheel on any device.
+                        top: '-27vw',
                         left: 0,
                         transform: 'translateX(-50%)',
                         display: 'inline-block',
-                        width: 84,
+                        width: '24vw',
                       }}
                     >
                       {prize ? prize.name : ''}
@@ -340,18 +374,22 @@ export default function PlayWheelPage() {
           )}
 
           {/* Center hub — fixed, never rotates, never resizes. The win reveal is a
-              separate full-screen overlay (below), not shown here anymore -- this
-              stays the plain resting badge at all times. */}
-          <div className="absolute left-1/2 top-1/2 z-10" style={{ width: 96, transform: 'translate(-50%, -50%)' }}>
+              separate full-screen overlay (below), not shown here anymore. */}
+          <div className="absolute left-1/2 top-1/2 z-10" style={{ width: '30%', transform: 'translate(-50%, -50%)' }}>
             <Image src="/wheel/logo_cover.svg" alt="LAKI WIN" width={754} height={754} className="w-full h-auto" />
           </div>
         </div>
+      </div>
 
+      {/* Below the aspect-locked art block: SPIN button + error banner, in the
+          dark fade-to-black zone, same as the reference design. Not tied to the
+          circle's percentages since it just flows naturally beneath it. */}
+      <div className="relative z-10 flex w-full flex-1 flex-col items-center px-6 pt-6 pb-16">
         <button
           type="button"
           onClick={handleSpin}
           disabled={spinning}
-          className="relative mt-10 w-56 disabled:opacity-70"
+          className="relative w-56 disabled:opacity-70"
         >
           <Image src="/wheel/spin_button.svg" alt={spinning ? 'Spinning…' : 'Spin'} width={1238} height={403} className="w-full h-auto" priority />
         </button>
@@ -372,14 +410,13 @@ export default function PlayWheelPage() {
           onClick={() => setResult(null)}
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 px-8 animate-[wheel-reveal-in_300ms_ease-out]"
         >
-          <Image src="/brand/lakiwin-horizontal.png" alt="LAKI WIN" width={3328} height={2118} className="w-40 h-auto mb-6" />
           {prizePhotoFor(result.name) ? (
             <Image
               src={prizePhotoFor(result.name)!}
               alt={result.name}
               width={600}
               height={600}
-              className="w-48 h-48 object-contain mb-6"
+              className="w-56 h-56 object-contain mb-6"
             />
           ) : null}
           <p className="text-sm text-white/70 mb-1">You won</p>
