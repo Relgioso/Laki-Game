@@ -32,28 +32,30 @@ export async function PUT(request: NextRequest) {
   try {
     const { prizes } = await request.json()
 
-    if (prizes && prizes.length > MAX_PRIZES) {
+    if (!Array.isArray(prizes)) {
+      return NextResponse.json({ error: 'prizes must be an array.' }, { status: 400 })
+    }
+
+    if (prizes.length > MAX_PRIZES) {
       return NextResponse.json(
         { error: `Duck Race supports at most ${MAX_PRIZES} prizes (got ${prizes.length}).` },
         { status: 400 }
       )
     }
 
-    if (prizes) {
-      for (const p of prizes) {
-        const name = typeof p.name === 'string' ? p.name.trim() : ''
-        if (name.length === 0 || name.length > 100) {
-          return NextResponse.json(
-            { error: `Prize name must be between 1 and 100 characters (got "${p.name ?? ''}").` },
-            { status: 400 }
-          )
-        }
-        if (!ALLOWED_PRIZE_TYPES.includes(p.prizeType)) {
-          return NextResponse.json(
-            { error: `Invalid prize type: ${p.prizeType}` },
-            { status: 400 }
-          )
-        }
+    for (const p of prizes) {
+      const name = typeof p.name === 'string' ? p.name.trim() : ''
+      if (name.length === 0 || name.length > 100) {
+        return NextResponse.json(
+          { error: `Prize name must be between 1 and 100 characters (got "${p.name ?? ''}").` },
+          { status: 400 }
+        )
+      }
+      if (!ALLOWED_PRIZE_TYPES.includes(p.prizeType)) {
+        return NextResponse.json(
+          { error: `Invalid prize type: ${p.prizeType}` },
+          { status: 400 }
+        )
       }
     }
 
@@ -71,7 +73,7 @@ export async function PUT(request: NextRequest) {
     const { error: deleteError } = await supabase.from('duck_race_prizes').delete().not('id', 'is', null)
     if (deleteError) throw deleteError
 
-    if (prizes && prizes.length > 0) {
+    if (prizes.length > 0) {
       const rows = prizes.map((p: any, i: number) => {
         let inventory: number | null
         if (p.id && !('inventory' in p)) {

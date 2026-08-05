@@ -114,8 +114,12 @@ export default function DuckRacePage() {
         durations.set(p.displayOrder, p.displayOrder === prize.displayOrder ? 3.2 : 3.6 + Math.random())
       }
       setLaneDurations(durations)
-      const maxDuration = Math.max(...Array.from(durations.values()))
 
+      // Reveal at the winner's own finish (always exactly 3.2s, see the
+      // duration-assignment above), not when the whole field settles --
+      // non-winning lanes run 3.6-4.6s, so waiting for the slowest duck
+      // would hide the "winner crosses first" moment that's the entire
+      // visual point of the race.
       window.setTimeout(() => {
         setResult(prize)
         setRacing(false)
@@ -126,7 +130,7 @@ export default function DuckRacePage() {
           .catch(() => {
             // A failed background refresh shouldn't interrupt the result the player just saw.
           })
-      }, maxDuration * 1000 + 200)
+      }, 3.2 * 1000 + 200)
     } catch (err: any) {
       setPlayError(err.message || 'Something went wrong — please try again.')
       setRacing(false)
