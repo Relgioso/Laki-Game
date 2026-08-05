@@ -63,6 +63,33 @@ const CIRCLE_RADIUS_PCT = 46.76
 const SPIN_BUTTON_TOP_PCT = 79
 const SPIN_BUTTON_WIDTH_PCT = 46
 
+// Real wheel art per slot count. Each was hand-drawn separately (not a
+// generic N-slice approximation), so each gets its own file.
+const WHEEL_ART: Record<number, string> = {
+  6: '/wheel/wheel_6slice.svg',
+  8: '/wheel/wheel_8slice.svg',
+  10: '/wheel/wheel_10slice.svg',
+  12: '/wheel/wheel_12slice.svg',
+}
+
+// Wedge center angle = i * segmentAngle + WEDGE_PHASE_OFFSET_DEG[slotCount].
+// Measured directly from each SVG (pixel-sampled a ring of colors around the
+// center, found the yellow-wedge runs, took their center angles) rather than
+// assumed -- the 6-slice wheel taught us not to assume this (see the
+// wedge-angle-math fix in an earlier commit). Turns out it's NOT the same for
+// every count: 6/8/10-slice wedge centers land exactly on `i*segmentAngle`
+// (0 deg = top, matching the pointer), but the 12-slice art is rotated half a
+// segment relative to the others -- its wedge centers sit at
+// `i*segmentAngle + 15`, with a divider (not a wedge) at the very top. If
+// more slice-count art ever gets added, re-measure rather than assuming it
+// follows either existing pattern.
+const WEDGE_PHASE_OFFSET_DEG: Record<number, number> = {
+  6: 0,
+  8: 0,
+  10: 0,
+  12: 15,
+}
+
 export default function PlayWheelPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -169,16 +196,16 @@ export default function PlayWheelPage() {
 
       const prize: PlayResultPrize = data.prize
       // The pointer is fixed at the top (12 o'clock). Segment `displayOrder`'s wedge is
-      // centered at angle `displayOrder * segmentAngle` in the wheel's own un-rotated
-      // frame (dividers fall at the odd half-angles between them, `+ segmentAngle / 2`
-      // — verified against the actual wheel_6slice.svg art via pixel sampling, not
-      // assumed). After rotating the wheel by `rotation` degrees, that center appears
-      // on screen at `(targetCenter + rotation) mod 360`. We need that to land on 0
-      // (the pointer), so `rotation mod 360` must equal `(360 - targetCenter) mod 360`
-      // — call that the desired mod. We then pick the smallest forward delta from the
-      // wheel's current mod to the desired mod and add a few extra full spins on top,
-      // purely for animation flair.
-      const targetCenter = prize.displayOrder * segmentAngle
+      // centered at angle `displayOrder * segmentAngle + WEDGE_PHASE_OFFSET_DEG[slotCount]`
+      // in the wheel's own un-rotated frame — measured per slot count directly against
+      // each SVG's own art via pixel sampling, not assumed (see WEDGE_PHASE_OFFSET_DEG
+      // comment above; the offset is NOT the same for every slot count). After rotating
+      // the wheel by `rotation` degrees, that center appears on screen at
+      // `(targetCenter + rotation) mod 360`. We need that to land on 0 (the pointer), so
+      // `rotation mod 360` must equal `(360 - targetCenter) mod 360` — call that the
+      // desired mod. We then pick the smallest forward delta from the wheel's current mod
+      // to the desired mod and add a few extra full spins on top, purely for animation flair.
+      const targetCenter = prize.displayOrder * segmentAngle + (WEDGE_PHASE_OFFSET_DEG[slotCount] ?? 0)
       const desiredMod = ((360 - targetCenter) % 360 + 360) % 360
       setRotation((prev) => {
         const prevMod = ((prev % 360) + 360) % 360
@@ -232,13 +259,12 @@ export default function PlayWheelPage() {
     )
   }
 
-  // The provided wheel_6slice.svg asset is a fixed 6-slice design — strictly
+  // Each slot count has its own hand-drawn art (WHEEL_ART above) -- strictly
   // following it (rather than a generic N-slice approximation) means using it
-  // as-is. Locked to 6 for now, per instruction; 8/10/12 will get their own
-  // matching art from Claire before being wired back in, so a slotCount other
-  // than 6 (shouldn't happen — the admin picker is now locked to 6 too) falls
-  // back to a plain solid wheel rather than misusing the 6-slice art.
-  const usingSixSliceArt = slotCount === 6
+  // as-is per count, not stretching/reusing one asset for another. A
+  // slotCount with no matching art (shouldn't happen -- the admin picker only
+  // offers 6/8/10/12) falls back to a plain solid CSS-drawn wheel.
+  const wheelArtSrc = WHEEL_ART[slotCount]
 
   return (
     <div className="relative flex flex-1 flex-col items-center bg-[#1a0f00]">
@@ -303,7 +329,7 @@ export default function PlayWheelPage() {
           </div>
 
           {/* Rotating wheel. */}
-          {usingSixSliceArt ? (
+          {wheelArtSrc ? (
             <div
               className="relative w-full h-full rounded-full"
               style={{
@@ -311,14 +337,14 @@ export default function PlayWheelPage() {
                 transition: 'transform 4s cubic-bezier(0.17, 0.67, 0.2, 1)',
               }}
             >
-              <Image src="/wheel/wheel_6slice.svg" alt="" width={2011} height={2011} className="w-full h-full" priority />
+              <Image src={wheelArtSrc} alt="" width={2011} height={2011} className="w-full h-full" priority />
 
               {/* Prize labels, one per wedge, oriented radially outward from center.
-                  Wedge centers sit at `i * segmentAngle` (no half-offset) — verified
-                  via pixel sampling against wheel_6slice.svg; dividers, not wedge
-                  centers, are the ones at the +half-angle positions. */}
+                  centerAngle uses WEDGE_PHASE_OFFSET_DEG (see comment above) --
+                  do NOT assume `i * segmentAngle` alone works for every slot count,
+                  it doesn't (12-slice needs the +15 offset). */}
               {segments.map((prize, i) => {
-                const centerAngle = i * segmentAngle
+                const centerAngle = i * segmentAngle + (WEDGE_PHASE_OFFSET_DEG[slotCount] ?? 0)
                 return (
                   <div
                     key={`label-${i}`}
