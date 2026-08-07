@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { playConfettiPop, scheduleSpinTicks, playWinChime } from '@/lib/sound'
+import { playApplause, playConfettiPop, scheduleSpinTicks, playWinChime } from '@/lib/sound'
 import { launchConfetti } from '@/lib/confetti'
 import { prizePhotoFor } from '@/lib/prize-photos'
 
@@ -166,10 +166,10 @@ export default function PlayColorGamePage() {
   }, [clearDropTimeouts])
 
   // Fires confetti once the reveal overlay (and its canvas) is actually
-  // mounted, and only for a true three-of-a-kind — the merch consolation
-  // prize still gets a reveal card, just not the celebration.
+  // mounted -- every play surfaces a real prize (combo or merch), so every
+  // reveal gets the celebration, not just a three-of-a-kind.
   useEffect(() => {
-    if (!result || result === 'merch') return
+    if (!result) return
     const canvas = confettiCanvasRef.current
     if (!canvas) return
     const cancel = launchConfetti(canvas)
@@ -227,11 +227,14 @@ export default function PlayColorGamePage() {
 
       if (won === 'win' || won === 'laki' || won === 'clover') {
         setTiles([won, won, won])
-        playWinChime()
-        playConfettiPop()
       } else {
         setTiles(nonMatchingArrangement())
       }
+      // Every play surfaces a real prize, so every reveal gets the full
+      // celebration -- chime, confetti pop, and a round of applause.
+      playWinChime()
+      playConfettiPop()
+      playApplause()
 
       setResult(won)
       setPrize(wonPrize)
@@ -292,22 +295,24 @@ export default function PlayColorGamePage() {
             each block sized by its own art's aspect ratio, stacked with no
             gap so they read as one continuous machine. */}
         <div className="relative w-full">
-          <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-[3%]">
+          {/* Exact match to the Wheel page's nav buttons: h-12 w-12 buttons,
+              h-6 w-6 icons, p-[4%] from the edges, same z-index. */}
+          <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-[4%]">
             <Link
               href="/"
               aria-label="Back"
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
             >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5M5 12l6-6M5 12l6 6" />
               </svg>
             </Link>
             <Link
               href="/admin/color-game"
               aria-label="Manage prizes"
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
             >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round">
+              <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round">
                 <path d="M4 7h16M4 12h16M4 17h16" />
               </svg>
             </Link>

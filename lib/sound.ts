@@ -225,6 +225,61 @@ export function scheduleCrowdCheer(durationMs: number): () => void {
   }
 }
 
+// A short burst of applause for a prize reveal -- a cluster of individual
+// "clap" transients (sharp-attack, fast-decay bandpass noise, the same
+// noise-buffer technique as playConfettiPop/scheduleCrowdCheer's bursts,
+// just shorter and brighter to read as a hand clap rather than a shout)
+// scattered over ~1.1s with randomized timing/pitch/volume so it reads as a
+// crowd clapping together rather than one mechanical repeated sound.
+export function playApplause() {
+  const audioCtx = getContext()
+  if (!audioCtx) return
+
+  function clap(startAt: number, gainScale: number) {
+    const ctx = getContext()
+    if (!ctx) return
+    const duration = 0.04 + Math.random() * 0.03
+
+    const bufferSize = Math.floor(ctx.sampleRate * duration)
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize)
+    }
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.setValueAtTime(1800 + Math.random() * 1400, startAt)
+    filter.Q.setValueAtTime(0.8, startAt)
+
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.0001, startAt)
+    gain.gain.exponentialRampToValueAtTime((0.18 + Math.random() * 0.1) * gainScale, startAt + 0.004)
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration)
+
+    source.connect(filter)
+    filter.connect(gain)
+    gain.connect(ctx.destination)
+    source.start(startAt)
+    source.stop(startAt + duration)
+  }
+
+  const now = audioCtx.currentTime
+  const totalDuration = 1.1
+  // A burst of individual claps rising then fading, like a crowd starting
+  // to clap together and tapering off -- not a flat constant-rate pattern.
+  let t = 0
+  while (t < totalDuration) {
+    const progress = t / totalDuration
+    const envelope = Math.sin(Math.PI * Math.min(1, progress * 1.3)) // rises then falls
+    clap(now + t, 0.4 + envelope * 0.8)
+    // Individual claps close together at the peak, sparser at the start/end.
+    t += 0.03 + Math.random() * 0.05 + (1 - envelope) * 0.05
+  }
+}
+
 // A short ascending four-note chime for a win reveal.
 export function playWinChime() {
   const audioCtx = getContext()
