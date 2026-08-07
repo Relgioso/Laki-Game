@@ -56,30 +56,26 @@ const SHELF_ASPECT = 1779.53 / 770.14
 const BOARD_ASPECT = 2317.99 / 4013.29
 const ROPE_ASPECT = 415.57 / 2571.5
 
-// Shelf occupies this fraction of the combined shelf+board stack's height —
-// derived from both arts' own aspect ratios (SHELF_ASPECT / BOARD_ASPECT
-// above), resolution-independent since both are rendered at the same width.
-const SHELF_HEIGHT_PCT_OF_STACK = 20
+// The board's own art already draws its yellow chute starting from the very
+// top of its viewBox (meant to show through behind/around the shelf, in the
+// gaps between its two raised arms) — so the shelf is an OVERLAY on top of
+// the board's own top portion, not a separate block stacked above it.
+// Height as % of the board's own full height, derived from both arts' own
+// aspect ratios (SHELF_ASPECT / BOARD_ASPECT above).
+const SHELF_HEIGHT_PCT = (1 / SHELF_ASPECT / (1 / BOARD_ASPECT)) * 100
 
 // Dice rest in the shelf window at idle, then on a pull they fall the length
 // of the chute to a landing zone near the bottom and tumble there — both
-// expressed as % of the combined shelf+board stack (see the dice-layer
-// wrapper below, which spans that whole stack). The start position matches
-// where the tiles used to sit inside the shelf's own box (14% of the
-// shelf's height) converted to the combined stack's percentage.
-const DICE_START_TOP_PCT = 14 * (SHELF_HEIGHT_PCT_OF_STACK / 100)
-const DICE_LANDING_TOP_PCT = 78
+// expressed as % of the board's own full height (see the dice-layer wrapper
+// below). The start position matches where the tiles sit inside the shelf's
+// own box (14% of the shelf's height) converted to that same percentage.
+const DICE_START_TOP_PCT = 14 * (SHELF_HEIGHT_PCT / 100)
+const DICE_LANDING_TOP_PCT = 72.5
 const TILE_ROW_WIDTH_PCT = 66
 
 // Ring width as a percentage of the board's width; the rope's height follows
 // from ROPE_ASPECT so the coil/ring proportions stay true to the art.
 const RING_WIDTH_PCT = 21
-
-// Combined height/width ratio of the shelf+board stack — used to cap the
-// whole game's on-screen size the same way the Wheel page's own background
-// aspect ratio naturally does, so Color Game fits one screen without
-// scrolling instead of rendering taller just because its art is taller.
-const STACK_HEIGHT_RATIO = 1 / SHELF_ASPECT + 1 / BOARD_ASPECT
 
 // A realistic fall reads as: accelerating drop (ease-in, not instant),
 // overshooting slightly past the landing line like real gravity, then two
@@ -285,16 +281,20 @@ export default function PlayColorGamePage() {
 
   return (
     <div className="relative flex flex-1 flex-col items-center bg-[#1a0f00]">
-      {/* Capped by both viewport width AND height (via STACK_HEIGHT_RATIO) —
-          Color Game's art is taller than the Wheel's, so capping by width
-          alone (like the Wheel page does) let it render taller than one
-          screen and forced a scroll. This keeps it to one screen the same
-          way the Wheel's own background aspect ratio does for that page. */}
-      <div className="relative" style={{ width: `min(100%, 28rem, calc(94dvh / ${STACK_HEIGHT_RATIO}))` }}>
-        {/* Shelf (holds the three tiles) directly above the chute board —
-            each block sized by its own art's aspect ratio, stacked with no
-            gap so they read as one continuous machine. */}
-        <div className="relative w-full">
+      {/* Same width cap as the Wheel page (w-full max-w-md) -- always fills
+          the actual screen edge-to-edge on mobile. A height-based shrink
+          was tried here to avoid scrolling on short viewports, but it
+          narrowed the column below the real screen width, leaving visible
+          page background down the sides that the Wheel page never has
+          (its buttons sit flush against the true edges). */}
+      <div className="relative w-full max-w-md">
+        {/* Board is the single base layer (its own art already draws yellow
+            starting from the very top, meant to show through behind the
+            shelf) — the shelf overlays on top of that same span instead of
+            being stacked as an additional block above it. */}
+        <div className="relative w-full" style={{ aspectRatio: `${BOARD_ASPECT}` }}>
+          <Image src="/color-game/board.svg" alt="" fill priority />
+
           {/* Exact match to the Wheel page's nav buttons: h-12 w-12 buttons,
               h-6 w-6 icons, p-[4%] from the edges, same z-index. */}
           <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-[4%]">
@@ -318,51 +318,47 @@ export default function PlayColorGamePage() {
             </Link>
           </div>
 
-          <div className="relative w-full" style={{ aspectRatio: `${SHELF_ASPECT}`, containerType: 'inline-size' }}>
-            <Image src="/color-game/shelf.svg" alt="" fill priority />
+          <div className="absolute inset-x-0 top-0" style={{ height: `${SHELF_HEIGHT_PCT}%` }}>
+            <Image src="/color-game/shelf.svg" alt="" fill />
           </div>
 
-          <div className="relative w-full" style={{ aspectRatio: `${BOARD_ASPECT}` }}>
-            <Image src="/color-game/board.svg" alt="" fill priority />
+          {/* Rope + ring pull handle, hanging from the shelf's bottom edge.
+              Dragged as a rigid unit (see pullY comment above) rather than
+              stretched. Removed entirely once a pull actually triggers a
+              roll (dicePhase leaves 'shelf') — it's been released and the
+              dice are falling, so there's nothing left to pull until
+              they're back and reset. */}
+          {dicePhase === 'shelf' && (
+            <div
+              className="absolute left-1/2 select-none touch-none"
+              style={{
+                top: `${SHELF_HEIGHT_PCT}%`,
+                width: `${RING_WIDTH_PCT}%`,
+                transform: `translate(-50%, ${pullY}px)`,
+                transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+            >
+              <Image
+                src="/color-game/rope.svg"
+                alt="Pull to play"
+                width={416}
+                height={2572}
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
+                className="h-auto w-full cursor-grab active:cursor-grabbing"
+                style={{ aspectRatio: `${ROPE_ASPECT}` }}
+                priority
+              />
+            </div>
+          )}
 
-            {/* Rope + ring pull handle. Dragged as a rigid unit (see pullY
-                comment above) rather than stretched. Removed entirely once a
-                pull actually triggers a roll (dicePhase leaves 'shelf') —
-                it's been released and the dice are falling, so there's
-                nothing left to pull until they're back and reset. */}
-            {dicePhase === 'shelf' && (
-              <div
-                className="absolute left-1/2 top-0 select-none touch-none"
-                style={{
-                  width: `${RING_WIDTH_PCT}%`,
-                  transform: `translate(-50%, ${pullY}px)`,
-                  transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-              >
-                <Image
-                  src="/color-game/rope.svg"
-                  alt="Pull to play"
-                  width={416}
-                  height={2572}
-                  draggable={false}
-                  onDragStart={(e) => e.preventDefault()}
-                  className="h-auto w-full cursor-grab active:cursor-grabbing"
-                  style={{ aspectRatio: `${ROPE_ASPECT}` }}
-                  priority
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Dice layer, spanning the full shelf+board stack (an absolutely
-              positioned sibling sized against that same combined height) so
-              the tile row can travel from the shelf down to a landing zone
-              near the bottom of the chute, rather than being boxed inside
-              the shelf's own (much shorter) art. */}
+          {/* Dice layer, spanning the board's full height (an absolutely
+              positioned sibling) so the tile row can travel from the shelf
+              down to a landing zone near the bottom of the chute. */}
           <div className="absolute inset-0 pointer-events-none">
             <div
               className="absolute left-1/2 flex -translate-x-1/2 gap-[5%]"
