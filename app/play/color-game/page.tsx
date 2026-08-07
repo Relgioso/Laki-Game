@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { playConfettiPop, playSpinTick, playWinChime } from '@/lib/sound'
+import { playConfettiPop, scheduleSpinTicks, playWinChime } from '@/lib/sound'
 import { launchConfetti } from '@/lib/confetti'
 import { prizePhotoFor } from '@/lib/prize-photos'
 
@@ -111,13 +111,18 @@ const DICE_PHASE_TRANSITION: Record<DicePhase, string> = {
 // driven by setTimeout below (matches the durations above).
 const DICE_SETTLE_AT_MS = 950 + 220 + 170
 
-// Once settled, each tile rests at a slightly different height/angle rather
-// than lining up perfectly — real dropped dice don't land in a neat row.
+// Each tile settles at a slightly different height/angle rather than lining
+// up perfectly — real dropped dice don't land in a neat row. `rotate` is the
+// FINAL resting angle; TILE_SPIN_TURNS extra full turns are added on top
+// while rolling so each tile does one smooth, continuously decelerating
+// spin from 0deg to its resting angle — not an oscillating side-to-side
+// wobble, which read as a nervous flicker rather than a tumble.
 const TILE_SETTLE_OFFSETS = [
   { dy: -4, rotate: -6 },
   { dy: 3, rotate: 5 },
   { dy: -1.5, rotate: -3 },
 ] as const
+const TILE_SPIN_TURNS = 2
 
 export default function PlayColorGamePage() {
   const [tiles, setTiles] = useState<ComboSymbol[]>(['laki', 'clover', 'win'])
@@ -126,7 +131,10 @@ export default function PlayColorGamePage() {
   const [prize, setPrize] = useState<PlayResultPrize | null>(null)
   const [playError, setPlayError] = useState<string | null>(null)
 
-  const intervalRef = useRef<number | null>(null)
+  // Cancel function for the in-flight decelerating symbol-swap schedule (see
+  // scheduleSpinTicks below) -- not a setInterval id, since the swap rate
+  // isn't constant.
+  const stopSwapsRef = useRef<(() => void) | null>(null)
   const confettiCanvasRef = useRef<HTMLCanvasElement>(null)
 
   // Rope pull state. `pullY` is the rope+ring's current vertical offset from
@@ -157,7 +165,7 @@ export default function PlayColorGamePage() {
 
   useEffect(() => {
     return () => {
-      if (intervalRef.current != null) window.clearInterval(intervalRef.current)
+      stopSwapsRef.current?.()
       clearDropTimeouts()
     }
   }, [clearDropTimeouts])
@@ -191,13 +199,13 @@ export default function PlayColorGamePage() {
     )
 
     // Roll the three tiles through random symbols while the request is in
-    // flight, like a slot machine — the "dice roll" the pull sets off. Runs
-    // the whole time regardless of fall/landed phase, so the tiles keep
-    // tumbling both mid-fall and after landing.
-    intervalRef.current = window.setInterval(() => {
+    // flight, like a slot machine — the "dice roll" the pull sets off. Uses
+    // the same decelerating tick schedule as the Wheel page (fast at first,
+    // slowing down) timed to finish right as the fall settles, instead of a
+    // constant-rate interval that just cuts off abruptly.
+    stopSwapsRef.current = scheduleSpinTicks(DICE_SETTLE_AT_MS, () => {
       setTiles([randomSymbol(), randomSymbol(), randomSymbol()])
-      playSpinTick()
-    }, 90)
+    })
 
     // Long enough for the dice to finish settling (DICE_SETTLE_AT_MS) with
     // some room left over, so there's a stretch of "tumbling at the bottom"
@@ -208,10 +216,8 @@ export default function PlayColorGamePage() {
       const [res] = await Promise.all([fetch('/api/color-game/play', { method: 'POST' }), minAnimation])
       const data = await res.json()
 
-      if (intervalRef.current != null) {
-        window.clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
+      stopSwapsRef.current?.()
+      stopSwapsRef.current = null
 
       if (!res.ok) {
         setPlayError(data.error || 'Something went wrong — please try again.')
@@ -236,10 +242,8 @@ export default function PlayColorGamePage() {
       setPrize(wonPrize)
       setSpinning(false)
     } catch (err: any) {
-      if (intervalRef.current != null) {
-        window.clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
+      stopSwapsRef.current?.()
+      stopSwapsRef.current = null
       setPlayError(err.message || 'Something went wrong — please try again.')
       setSpinning(false)
       clearDropTimeouts()
@@ -369,26 +373,28 @@ export default function PlayColorGamePage() {
               }}
             >
               {tiles.map((symbol, i) => {
-                const settled = dicePhase === 'settled' ? TILE_SETTLE_OFFSETS[i] : null
+                // While rolling, each tile spins smoothly toward its own
+                // resting angle (TILE_SPIN_TURNS extra full turns on top, so
+                // it reads as one continuous decelerating tumble) rather
+                // than an oscillating wobble unrelated to the fall. Both the
+                // spin and the scatter offset ease in together over the
+                // whole fall+bounce sequence, ending exactly at rest.
+                const offset = TILE_SETTLE_OFFSETS[i]
+                const rolling = dicePhase !== 'shelf'
+                const rotateDeg = rolling ? TILE_SPIN_TURNS * 360 + offset.rotate : 0
+                const dy = rolling ? offset.dy : 0
                 return (
                   <div
                     key={i}
                     className="relative aspect-square flex-1 overflow-hidden rounded-[14%] shadow-md"
                     style={{
-                      transform: settled ? `translateY(${settled.dy}%) rotate(${settled.rotate}deg)` : 'none',
-                      transition: 'transform 220ms ease-out',
+                      transform: `translateY(${dy}%) rotate(${rotateDeg}deg)`,
+                      transition: rolling
+                        ? `transform ${DICE_SETTLE_AT_MS}ms cubic-bezier(0.15, 0.8, 0.35, 1)`
+                        : 'transform 300ms ease-out',
                     }}
                   >
-                    <Image
-                      src={SYMBOL_ART[symbol]}
-                      alt=""
-                      fill
-                      style={
-                        spinning
-                          ? { animation: 'color-game-roll 260ms ease-in-out infinite', animationDelay: `${i * 70}ms` }
-                          : undefined
-                      }
-                    />
+                    <Image src={SYMBOL_ART[symbol]} alt="" fill />
                   </div>
                 )
               })}
