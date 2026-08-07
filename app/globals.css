@@ -40,3 +40,12 @@ body {
   from { transform: translateY(-3px); }
   to { transform: translateY(3px); }
 }
+
+/* Color Game: dice-roll flicker on each tile while the symbols are cycling. */
+@keyframes color-game-roll {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(0.9) rotate(-6deg); }
+  50% { transform: scale(1.05) rotate(0deg); }
+  75% { transform: scale(0.9) rotate(6deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
