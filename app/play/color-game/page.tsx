@@ -81,11 +81,6 @@ const RING_WIDTH_PCT = 21
 // scrolling instead of rendering taller just because its art is taller.
 const STACK_HEIGHT_RATIO = 1 / SHELF_ASPECT + 1 / BOARD_ASPECT
 
-// Fixed height of the nav row above the art (h-11 buttons + py-3), in rem —
-// subtracted from the viewport-height budget below since it doesn't scale
-// with width the way the art does.
-const NAV_ROW_HEIGHT_REM = 4.25
-
 // A realistic fall reads as: accelerating drop (ease-in, not instant),
 // overshooting slightly past the landing line like real gravity, then two
 // decreasing bounces before coming to rest — not a single quick snap.
@@ -287,42 +282,37 @@ export default function PlayColorGamePage() {
 
   return (
     <div className="relative flex flex-1 flex-col items-center bg-[#1a0f00]">
-      {/* Capped by both viewport width AND height (via STACK_HEIGHT_RATIO,
-          with NAV_ROW_HEIGHT_REM subtracted for the nav row below) —
+      {/* Capped by both viewport width AND height (via STACK_HEIGHT_RATIO) —
           Color Game's art is taller than the Wheel's, so capping by width
           alone (like the Wheel page does) let it render taller than one
           screen and forced a scroll. This keeps it to one screen the same
           way the Wheel's own background aspect ratio does for that page. */}
-      <div className="relative flex flex-col" style={{ width: `min(100%, 28rem, calc((94dvh - ${NAV_ROW_HEIGHT_REM}rem) / ${STACK_HEIGHT_RATIO}))` }}>
-        {/* Back/manage nav sits in its own row above the art (not overlaid
-            on top of the shelf) so it has real breathing room from the tile
-            row, matching the Wheel page's spacing instead of crowding the
-            tiles the way an overlay on this shorter art would. */}
-        <div className="flex items-center justify-between py-3">
-          <Link
-            href="/"
-            aria-label="Back"
-            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5M5 12l6-6M5 12l6 6" />
-            </svg>
-          </Link>
-          <Link
-            href="/admin/color-game"
-            aria-label="Manage prizes"
-            className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round">
-              <path d="M4 7h16M4 12h16M4 17h16" />
-            </svg>
-          </Link>
-        </div>
-
+      <div className="relative" style={{ width: `min(100%, 28rem, calc(94dvh / ${STACK_HEIGHT_RATIO}))` }}>
         {/* Shelf (holds the three tiles) directly above the chute board —
             each block sized by its own art's aspect ratio, stacked with no
             gap so they read as one continuous machine. */}
         <div className="relative w-full">
+          <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-[3%]">
+            <Link
+              href="/"
+              aria-label="Back"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M5 12l6-6M5 12l6 6" />
+              </svg>
+            </Link>
+            <Link
+              href="/admin/color-game"
+              aria-label="Manage prizes"
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fad403] shadow-[0_3px_0_#cc9700] active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="black" strokeWidth={2.5} strokeLinecap="round">
+                <path d="M4 7h16M4 12h16M4 17h16" />
+              </svg>
+            </Link>
+          </div>
+
           <div className="relative w-full" style={{ aspectRatio: `${SHELF_ASPECT}`, containerType: 'inline-size' }}>
             <Image src="/color-game/shelf.svg" alt="" fill priority />
           </div>
@@ -331,31 +321,36 @@ export default function PlayColorGamePage() {
             <Image src="/color-game/board.svg" alt="" fill priority />
 
             {/* Rope + ring pull handle. Dragged as a rigid unit (see pullY
-                comment above) rather than stretched. */}
-            <div
-              className="absolute left-1/2 top-0 select-none touch-none"
-              style={{
-                width: `${RING_WIDTH_PCT}%`,
-                transform: `translate(-50%, ${pullY}px)`,
-                transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-            >
-              <Image
-                src="/color-game/rope.svg"
-                alt="Pull to play"
-                width={416}
-                height={2572}
-                draggable={false}
-                onDragStart={(e) => e.preventDefault()}
-                className="h-auto w-full cursor-grab active:cursor-grabbing"
-                style={{ aspectRatio: `${ROPE_ASPECT}` }}
-                priority
-              />
-            </div>
+                comment above) rather than stretched. Removed entirely once a
+                pull actually triggers a roll (dicePhase leaves 'shelf') —
+                it's been released and the dice are falling, so there's
+                nothing left to pull until they're back and reset. */}
+            {dicePhase === 'shelf' && (
+              <div
+                className="absolute left-1/2 top-0 select-none touch-none"
+                style={{
+                  width: `${RING_WIDTH_PCT}%`,
+                  transform: `translate(-50%, ${pullY}px)`,
+                  transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+              >
+                <Image
+                  src="/color-game/rope.svg"
+                  alt="Pull to play"
+                  width={416}
+                  height={2572}
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                  className="h-auto w-full cursor-grab active:cursor-grabbing"
+                  style={{ aspectRatio: `${ROPE_ASPECT}` }}
+                  priority
+                />
+              </div>
+            )}
           </div>
 
           {/* Dice layer, spanning the full shelf+board stack (an absolutely
