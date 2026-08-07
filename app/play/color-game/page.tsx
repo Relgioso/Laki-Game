@@ -225,7 +225,16 @@ export default function PlayColorGamePage() {
             >
               {tiles.map((symbol, i) => (
                 <div key={i} className="relative aspect-square flex-1 overflow-hidden rounded-[14%] shadow-md">
-                  <Image src={SYMBOL_ART[symbol]} alt="" fill className={spinning ? 'animate-[color-game-roll_400ms_ease-in-out_infinite]' : ''} />
+                  <Image
+                    src={SYMBOL_ART[symbol]}
+                    alt=""
+                    fill
+                    style={
+                      spinning
+                        ? { animation: 'color-game-roll 550ms cubic-bezier(0.34, 1.56, 0.64, 1) infinite', animationDelay: `${i * 90}ms` }
+                        : undefined
+                    }
+                  />
                 </div>
               ))}
             </div>
