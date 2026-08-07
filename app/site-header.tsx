@@ -3,11 +3,18 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+const GAMES: Record<string, string> = {
+  wheel: 'Wheel',
+  'color-game': 'Color Game',
+  'duck-race': 'Duck Race',
+}
+
 // The landing page and both public play screens (kiosk/booth tablets) each
 // have their own fully custom, branded design with no shared chrome -- a
 // player standing at the booth must not see a nav bar that could lead
 // straight into prize/inventory setup. Only the admin config screens use
-// this shared header, for convenience navigating between the two of them.
+// this shared header, for convenience navigating back to the game being
+// configured.
 export default function SiteHeader() {
   const pathname = usePathname()
   const isAdminScreen = pathname?.startsWith('/admin')
@@ -16,29 +23,23 @@ export default function SiteHeader() {
     return null
   }
 
+  // Which game's admin screen this is, if any (e.g. "/admin/color-game" ->
+  // "color-game") -- drives the "back to that game" link below instead of a
+  // flat list of every game's admin/play links, which read as a cluttered
+  // "module dashboard" rather than a way back to what you were just doing.
+  const slug = pathname?.split('/')[2]
+  const game = slug ? GAMES[slug] : undefined
+
   return (
-    <header className="border-b border-black/[.08] dark:border-white/[.145] px-6 py-4 flex flex-wrap items-center gap-6">
-      <span className="font-semibold text-lg">Laki-Game</span>
-      <nav className="flex flex-wrap gap-4 text-sm">
-        <Link href="/admin/wheel" className="hover:underline">
-          Admin: Wheel
+    <header className="border-b border-black/[.08] dark:border-white/[.145] px-6 py-4 flex items-center gap-4">
+      <Link href="/" className="font-semibold text-lg hover:underline">
+        Laki-Game
+      </Link>
+      {game && (
+        <Link href={`/play/${slug}`} className="ml-auto text-sm font-medium hover:underline">
+          ← Back to {game}
         </Link>
-        <Link href="/admin/color-game" className="hover:underline">
-          Admin: Color Game
-        </Link>
-        <Link href="/admin/duck-race" className="hover:underline">
-          Admin: Duck Race
-        </Link>
-        <Link href="/play/wheel" className="hover:underline">
-          Play: Wheel
-        </Link>
-        <Link href="/play/color-game" className="hover:underline">
-          Play: Color Game
-        </Link>
-        <Link href="/play/duck-race" className="hover:underline">
-          Play: Duck Race
-        </Link>
-      </nav>
+      )}
     </header>
   )
 }

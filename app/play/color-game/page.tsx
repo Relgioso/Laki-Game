@@ -75,6 +75,45 @@ const TILE_ROW_WIDTH_PCT = 66
 // from ROPE_ASPECT so the coil/ring proportions stay true to the art.
 const RING_WIDTH_PCT = 21
 
+// Combined height/width ratio of the shelf+board stack — used to cap the
+// whole game's on-screen size the same way the Wheel page's own background
+// aspect ratio naturally does, so Color Game fits one screen without
+// scrolling instead of rendering taller just because its art is taller.
+const STACK_HEIGHT_RATIO = 1 / SHELF_ASPECT + 1 / BOARD_ASPECT
+
+// A realistic fall reads as: accelerating drop (ease-in, not instant),
+// overshooting slightly past the landing line like real gravity, then two
+// decreasing bounces before coming to rest — not a single quick snap.
+type DicePhase = 'shelf' | 'falling' | 'bounce-up' | 'bounce-down' | 'settled'
+
+const DICE_PHASE_TOP_PCT: Record<DicePhase, number> = {
+  shelf: DICE_START_TOP_PCT,
+  falling: DICE_LANDING_TOP_PCT + 5,
+  'bounce-up': DICE_LANDING_TOP_PCT - 3,
+  'bounce-down': DICE_LANDING_TOP_PCT + 1.2,
+  settled: DICE_LANDING_TOP_PCT,
+}
+
+const DICE_PHASE_TRANSITION: Record<DicePhase, string> = {
+  shelf: 'top 500ms ease-out',
+  falling: 'top 950ms cubic-bezier(0.55, 0.06, 0.68, 0.19)',
+  'bounce-up': 'top 220ms ease-out',
+  'bounce-down': 'top 170ms ease-in-out',
+  settled: 'top 170ms ease-in-out',
+}
+
+// Timing of the falling -> bounce-up -> bounce-down -> settled sequence,
+// driven by setTimeout below (matches the durations above).
+const DICE_SETTLE_AT_MS = 950 + 220 + 170
+
+// Once settled, each tile rests at a slightly different height/angle rather
+// than lining up perfectly — real dropped dice don't land in a neat row.
+const TILE_SETTLE_OFFSETS = [
+  { dy: -4, rotate: -6 },
+  { dy: 3, rotate: 5 },
+  { dy: -1.5, rotate: -3 },
+] as const
+
 export default function PlayColorGamePage() {
   const [tiles, setTiles] = useState<ComboSymbol[]>(['laki', 'clover', 'win'])
   const [spinning, setSpinning] = useState(false)
@@ -95,21 +134,28 @@ export default function PlayColorGamePage() {
   const [pullY, setPullY] = useState(0)
   const [dragging, setDragging] = useState(false)
   const dragStartY = useRef<number | null>(null)
-  // True from the moment a pull starts until the reveal is dismissed — moves
-  // the dice from the shelf (false) down to the landing zone near the
-  // bottom of the chute (true). Stays true through the settled result so
-  // the dice remain at the bottom, per the reference video, until dismissed.
-  const [dropped, setDropped] = useState(false)
+  // Drives the fall: 'shelf' at idle/reset, then 'falling' -> 'bounce-up' ->
+  // 'bounce-down' -> 'settled' on a pull (see DICE_PHASE_TOP_PCT/TRANSITION
+  // above). Stays 'settled' through the result reveal so the dice remain at
+  // the bottom, per the reference video, until dismissed.
+  const [dicePhase, setDicePhase] = useState<DicePhase>('shelf')
+  const dropTimeoutsRef = useRef<number[]>([])
   // Mirrors `pullY` synchronously (state updates are batched/async, so a
   // pointerup that fires in the same tick as the preceding pointermove could
   // otherwise read a stale `pullY` from the previous render's closure).
   const pullYRef = useRef(0)
 
+  const clearDropTimeouts = useCallback(() => {
+    for (const id of dropTimeoutsRef.current) window.clearTimeout(id)
+    dropTimeoutsRef.current = []
+  }, [])
+
   useEffect(() => {
     return () => {
       if (intervalRef.current != null) window.clearInterval(intervalRef.current)
+      clearDropTimeouts()
     }
-  }, [])
+  }, [clearDropTimeouts])
 
   // Fires confetti once the reveal overlay (and its canvas) is actually
   // mounted, and only for a true three-of-a-kind — the merch consolation
@@ -125,25 +171,33 @@ export default function PlayColorGamePage() {
   const handlePlay = useCallback(async () => {
     if (spinning) return
     setSpinning(true)
-    setDropped(true)
     setPlayError(null)
     setResult(null)
     setPrize(null)
 
+    // Drive the fall -> bounce -> bounce -> settle sequence (see DICE_PHASE_*
+    // above) on its own timer, independent of the API round-trip.
+    clearDropTimeouts()
+    setDicePhase('falling')
+    dropTimeoutsRef.current.push(
+      window.setTimeout(() => setDicePhase('bounce-up'), 950),
+      window.setTimeout(() => setDicePhase('bounce-down'), 950 + 220),
+      window.setTimeout(() => setDicePhase('settled'), DICE_SETTLE_AT_MS)
+    )
+
     // Roll the three tiles through random symbols while the request is in
     // flight, like a slot machine — the "dice roll" the pull sets off. Runs
-    // the whole time regardless of fall/landed phase (see `dropped` above),
-    // so the tiles keep tumbling both mid-fall and after landing.
+    // the whole time regardless of fall/landed phase, so the tiles keep
+    // tumbling both mid-fall and after landing.
     intervalRef.current = window.setInterval(() => {
       setTiles([randomSymbol(), randomSymbol(), randomSymbol()])
       playSpinTick()
     }, 90)
 
-    // Long enough for the fall transition (700ms, see the dice-layer style
-    // below) to finish landing well before the tiles freeze on the real
-    // result, leaving a stretch of "tumbling at the bottom" per the
-    // reference video.
-    const minAnimation = new Promise((resolve) => window.setTimeout(resolve, 1300))
+    // Long enough for the dice to finish settling (DICE_SETTLE_AT_MS) with
+    // some room left over, so there's a stretch of "tumbling at the bottom"
+    // per the reference video before the tiles freeze on the real result.
+    const minAnimation = new Promise((resolve) => window.setTimeout(resolve, DICE_SETTLE_AT_MS + 400))
 
     try {
       const [res] = await Promise.all([fetch('/api/color-game/play', { method: 'POST' }), minAnimation])
@@ -157,7 +211,8 @@ export default function PlayColorGamePage() {
       if (!res.ok) {
         setPlayError(data.error || 'Something went wrong — please try again.')
         setSpinning(false)
-        setDropped(false)
+        clearDropTimeouts()
+        setDicePhase('shelf')
         return
       }
 
@@ -182,17 +237,19 @@ export default function PlayColorGamePage() {
       }
       setPlayError(err.message || 'Something went wrong — please try again.')
       setSpinning(false)
-      setDropped(false)
+      clearDropTimeouts()
+      setDicePhase('shelf')
     }
-  }, [spinning])
+  }, [spinning, clearDropTimeouts])
 
   // Tap-to-continue on the reveal resets the dice back up to the shelf,
   // ready for the next pull.
   const dismissReveal = useCallback(() => {
     setResult(null)
-    setDropped(false)
+    clearDropTimeouts()
+    setDicePhase('shelf')
     setTiles(['laki', 'clover', 'win'])
-  }, [])
+  }, [clearDropTimeouts])
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (spinning) return
@@ -221,7 +278,12 @@ export default function PlayColorGamePage() {
 
   return (
     <div className="relative flex flex-1 flex-col items-center bg-[#1a0f00]">
-      <div className="relative w-full max-w-md">
+      {/* Capped by both viewport width AND height (via STACK_HEIGHT_RATIO) —
+          Color Game's art is taller than the Wheel's, so capping by width
+          alone (like the Wheel page does) let it render taller than one
+          screen and forced a scroll. This keeps it to one screen the same
+          way the Wheel's own background aspect ratio does for that page. */}
+      <div className="relative" style={{ width: `min(100%, 28rem, calc(94dvh / ${STACK_HEIGHT_RATIO}))` }}>
         {/* Shelf (holds the three tiles) directly above the chute board —
             each block sized by its own art's aspect ratio, stacked with no
             gap so they read as one continuous machine. */}
@@ -291,25 +353,35 @@ export default function PlayColorGamePage() {
             <div
               className="absolute left-1/2 flex -translate-x-1/2 gap-[5%]"
               style={{
-                top: `${dropped ? DICE_LANDING_TOP_PCT : DICE_START_TOP_PCT}%`,
+                top: `${DICE_PHASE_TOP_PCT[dicePhase]}%`,
                 width: `${TILE_ROW_WIDTH_PCT}%`,
-                transition: 'top 700ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                transition: DICE_PHASE_TRANSITION[dicePhase],
               }}
             >
-              {tiles.map((symbol, i) => (
-                <div key={i} className="relative aspect-square flex-1 overflow-hidden rounded-[14%] shadow-md">
-                  <Image
-                    src={SYMBOL_ART[symbol]}
-                    alt=""
-                    fill
-                    style={
-                      spinning
-                        ? { animation: 'color-game-roll 260ms ease-in-out infinite', animationDelay: `${i * 70}ms` }
-                        : undefined
-                    }
-                  />
-                </div>
-              ))}
+              {tiles.map((symbol, i) => {
+                const settled = dicePhase === 'settled' ? TILE_SETTLE_OFFSETS[i] : null
+                return (
+                  <div
+                    key={i}
+                    className="relative aspect-square flex-1 overflow-hidden rounded-[14%] shadow-md"
+                    style={{
+                      transform: settled ? `translateY(${settled.dy}%) rotate(${settled.rotate}deg)` : 'none',
+                      transition: 'transform 220ms ease-out',
+                    }}
+                  >
+                    <Image
+                      src={SYMBOL_ART[symbol]}
+                      alt=""
+                      fill
+                      style={
+                        spinning
+                          ? { animation: 'color-game-roll 260ms ease-in-out infinite', animationDelay: `${i * 70}ms` }
+                          : undefined
+                      }
+                    />
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
