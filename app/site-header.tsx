@@ -31,12 +31,15 @@ export default function SiteHeader() {
   const game = slug ? GAMES[slug] : undefined
 
   return (
-    <header className="border-b border-black/[.08] dark:border-white/[.145] px-6 py-4 flex items-center gap-4">
-      <Link href="/" className="font-semibold text-lg hover:underline">
-        Laki-Game
+    <header className="bg-black px-6 py-3.5 flex items-center gap-4">
+      <Link href="/" className="font-extrabold text-lg tracking-tight text-white">
+        LAKI<span className="text-[#fad403]">·</span>GAME
       </Link>
       {game && (
-        <Link href={`/play/${slug}`} className="ml-auto text-sm font-medium hover:underline">
+        <Link
+          href={`/play/${slug}`}
+          className="ml-auto rounded-full bg-[#fad403] px-4 py-1.5 text-sm font-bold text-black shadow-[0_3px_0_#cc9700] transition-transform active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
+        >
           ← Back to {game}
         </Link>
       )}
