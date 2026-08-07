@@ -41,17 +41,15 @@ body {
   to { transform: translateY(3px); }
 }
 
-/* Color Game: each tile repeatedly retreats up above the shelf's divider bar
-   (clipped by its slot's overflow-hidden, like it's tucked back into the
-   cage) then drops back down into the window with a small bounce — the
-   classic physical Color Game's "dice roll down" motion, not just an
-   in-place flicker. The face symbol underneath swaps on its own faster
-   interval, so each drop can reveal a different value. */
+/* Color Game: a quick scale/rotate wobble on each tile face, layered on top
+   of the tile row's own top-position fall (see DICE_START_TOP_PCT /
+   DICE_LANDING_TOP_PCT in the page) — the row travels from the shelf to the
+   bottom of the chute, while this keyframe gives each individual die a
+   tumbling feel both mid-fall and once it's landed. */
 @keyframes color-game-roll {
-  0%   { transform: translateY(-65%) scale(0.82) rotate(-3deg); opacity: 0.5; }
-  30%  { transform: translateY(8%) scale(1.08) rotate(2deg); opacity: 1; }
-  45%  { transform: translateY(-6%) scale(0.97) rotate(-1deg); }
-  60%  { transform: translateY(3%) scale(1.02); }
-  78%  { transform: translateY(0%) scale(1); }
-  100% { transform: translateY(-65%) scale(0.82) rotate(-3deg); opacity: 0.5; }
+  0%   { transform: scale(1) rotate(0deg); }
+  25%  { transform: scale(0.88) rotate(-8deg); }
+  50%  { transform: scale(1.06) rotate(0deg); }
+  75%  { transform: scale(0.88) rotate(8deg); }
+  100% { transform: scale(1) rotate(0deg); }
 }
