@@ -77,13 +77,21 @@ const TILE_ROW_WIDTH_PCT = 66
 // from ROPE_ASPECT so the coil/ring proportions stay true to the art.
 const RING_WIDTH_PCT = 21
 
-// A realistic fall reads as: accelerating drop (ease-in, not instant),
-// overshooting slightly past the landing line like real gravity, then two
-// decreasing bounces before coming to rest — not a single quick snap.
-type DicePhase = 'shelf' | 'falling' | 'bounce-up' | 'bounce-down' | 'settled'
+// A realistic fall reads as: the tile box first lifts itself up out of the
+// shelf slot (rising -- see the "box is raised" fix below), then an
+// accelerating drop (ease-in, not instant), overshooting slightly past the
+// landing line like real gravity, then two decreasing bounces before coming
+// to rest — not a single quick snap.
+type DicePhase = 'shelf' | 'rising' | 'falling' | 'bounce-up' | 'bounce-down' | 'settled'
+
+// How far the box visibly lifts (as % of board height) before it tips into
+// the chute and falls -- this is what makes the "raise" readable as motion
+// rather than an instant shadow popping on.
+const DICE_RISE_LIFT_PCT = 4
 
 const DICE_PHASE_TOP_PCT: Record<DicePhase, number> = {
   shelf: DICE_START_TOP_PCT,
+  rising: DICE_START_TOP_PCT - DICE_RISE_LIFT_PCT,
   falling: DICE_LANDING_TOP_PCT + 5,
   'bounce-up': DICE_LANDING_TOP_PCT - 3,
   'bounce-down': DICE_LANDING_TOP_PCT + 1.2,
@@ -92,15 +100,17 @@ const DICE_PHASE_TOP_PCT: Record<DicePhase, number> = {
 
 const DICE_PHASE_TRANSITION: Record<DicePhase, string> = {
   shelf: 'top 500ms ease-out',
+  rising: 'top 180ms ease-out',
   falling: 'top 950ms cubic-bezier(0.55, 0.06, 0.68, 0.19)',
   'bounce-up': 'top 220ms ease-out',
   'bounce-down': 'top 170ms ease-in-out',
   settled: 'top 170ms ease-in-out',
 }
 
-// Timing of the falling -> bounce-up -> bounce-down -> settled sequence,
-// driven by setTimeout below (matches the durations above).
-const DICE_SETTLE_AT_MS = 950 + 220 + 170
+// Timing of the rising -> falling -> bounce-up -> bounce-down -> settled
+// sequence, driven by setTimeout below (matches the durations above).
+const DICE_RISE_MS = 180
+const DICE_SETTLE_AT_MS = DICE_RISE_MS + 950 + 220 + 170
 
 // Each tile settles at a slightly different height/angle rather than lining
 // up perfectly — real dropped dice don't land in a neat row. `rotate` is the
@@ -179,13 +189,14 @@ export default function PlayColorGamePage() {
     setResult(null)
     setPrize(null)
 
-    // Drive the fall -> bounce -> bounce -> settle sequence (see DICE_PHASE_*
-    // above) on its own timer, independent of the API round-trip.
+    // Drive the rise -> fall -> bounce -> bounce -> settle sequence (see
+    // DICE_PHASE_* above) on its own timer, independent of the API round-trip.
     clearDropTimeouts()
-    setDicePhase('falling')
+    setDicePhase('rising')
     dropTimeoutsRef.current.push(
-      window.setTimeout(() => setDicePhase('bounce-up'), 950),
-      window.setTimeout(() => setDicePhase('bounce-down'), 950 + 220),
+      window.setTimeout(() => setDicePhase('falling'), DICE_RISE_MS),
+      window.setTimeout(() => setDicePhase('bounce-up'), DICE_RISE_MS + 950),
+      window.setTimeout(() => setDicePhase('bounce-down'), DICE_RISE_MS + 950 + 220),
       window.setTimeout(() => setDicePhase('settled'), DICE_SETTLE_AT_MS)
     )
 
@@ -323,36 +334,49 @@ export default function PlayColorGamePage() {
           </div>
 
           {/* Rope + ring pull handle, hanging from the shelf's bottom edge.
-              Dragged as a rigid unit (see pullY comment above) rather than
-              stretched. Removed entirely once a pull actually triggers a
-              roll (dicePhase leaves 'shelf') — it's been released and the
-              dice are falling, so there's nothing left to pull until
-              they're back and reset. */}
+              It's a single rigid illustration (not a stretchable texture),
+              so it can't visually "grow" as it's pulled -- instead, MAX_PULL
+              worth of its own top length starts tucked up behind the shelf's
+              bottom edge (clipped by the overflow-hidden mask below) and
+              only slides into view as the ring is dragged down, like rope
+              feeding out from a slot. Without this mask, dragging the whole
+              rigid image down opens a gap above it, exposing its flat top
+              edge floating in the open chute -- the mask keeps the visible
+              top of the rope pinned exactly at the shelf's edge at every
+              pull distance, so that never shows. Removed entirely once a
+              pull actually triggers a roll (dicePhase leaves 'shelf') —
+              it's been released and the dice are falling, so there's
+              nothing left to pull until they're back and reset. */}
           {dicePhase === 'shelf' && (
             <div
-              className="absolute left-1/2 select-none touch-none"
-              style={{
-                top: `${SHELF_HEIGHT_PCT}%`,
-                width: `${RING_WIDTH_PCT}%`,
-                transform: `translate(-50%, ${pullY}px)`,
-                transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
+              className="absolute inset-x-0 bottom-0 overflow-hidden"
+              style={{ top: `${SHELF_HEIGHT_PCT}%` }}
             >
-              <Image
-                src="/color-game/rope.svg"
-                alt="Pull to play"
-                width={416}
-                height={2572}
-                draggable={false}
-                onDragStart={(e) => e.preventDefault()}
-                className="h-auto w-full cursor-grab active:cursor-grabbing"
-                style={{ aspectRatio: `${ROPE_ASPECT}` }}
-                priority
-              />
+              <div
+                className="absolute left-1/2 select-none touch-none"
+                style={{
+                  top: 0,
+                  width: `${RING_WIDTH_PCT}%`,
+                  transform: `translate(-50%, ${pullY - MAX_PULL}px)`,
+                  transition: dragging ? 'none' : 'transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+              >
+                <Image
+                  src="/color-game/rope.svg"
+                  alt="Pull to play"
+                  width={416}
+                  height={2572}
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
+                  className="h-auto w-full cursor-grab active:cursor-grabbing"
+                  style={{ aspectRatio: `${ROPE_ASPECT}` }}
+                  priority
+                />
+              </div>
             </div>
           )}
 
@@ -382,7 +406,12 @@ export default function PlayColorGamePage() {
                 return (
                   <div
                     key={i}
-                    className="relative aspect-square flex-1 overflow-hidden rounded-[14%] shadow-md"
+                    // No shadow at idle -- the tiles should read as sitting
+                    // flush inside the shelf's yellow, not as raised cards.
+                    // The shadow (and the rise itself, see DICE_PHASE_TOP_PCT
+                    // above) only appears once a pull lifts the box out of
+                    // the slot.
+                    className={`relative aspect-square flex-1 overflow-hidden rounded-[14%] transition-shadow duration-150 ${rolling ? 'shadow-md' : 'shadow-none'}`}
                     style={{
                       transform: `translateY(${dy}%) rotate(${rotateDeg}deg)`,
                       transition: rolling
