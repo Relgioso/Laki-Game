@@ -3,7 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types'
 
 // Tables the API routes are allowed to address by name (interpolated into SQL,
 // so this list is the only thing that may ever reach a query as a table name).
-export type PrizeTable = 'wheel_prizes' | 'color_combo_prizes' | 'color_merch_prizes' | 'duck_race_prizes'
+export type PrizeTable = 'wheel_prizes' | 'color_combo_prizes' | 'color_merch_prizes' | 'duck_race_prizes' | 'game_prizes'
 
 export type PrizeRow = {
   id: string
@@ -53,7 +53,8 @@ export type ReplacementPrize = {
 
 // Full replace of a prize list: delete every row, insert the submitted set.
 // Runs as one D1 batch, which is atomic — a failed insert rolls back the delete.
-export async function replacePrizes(table: Exclude<PrizeTable, 'color_combo_prizes'>, rows: ReplacementPrize[]) {
+// (Never game_prizes: this DELETE is unscoped and would wipe every game.)
+export async function replacePrizes(table: Exclude<PrizeTable, 'color_combo_prizes' | 'game_prizes'>, rows: ReplacementPrize[]) {
   const db = getDb()
   const insert = db.prepare(
     `INSERT INTO ${table} (id, name, prize_type, probability, inventory, active, display_order) VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -69,4 +70,37 @@ export async function replacePrizes(table: Exclude<PrizeTable, 'color_combo_priz
 export async function currentInventoryBy(table: PrizeTable, key: 'id' | 'symbol'): Promise<Map<string, number | null>> {
   const { results } = await getDb().prepare(`SELECT ${key}, inventory FROM ${table}`).all<Record<string, unknown>>()
   return new Map(results.map(r => [r[key] as string, r.inventory as number | null]))
+}
+
+// --- Shared-platform games: every query is scoped by game slug. ---
+
+export async function selectGamePrizes(game: string, { availableOnly = false } = {}): Promise<PrizeRow[]> {
+  const filter = availableOnly ? ' AND active = 1 AND (inventory IS NULL OR inventory > 0)' : ''
+  const { results } = await getDb()
+    .prepare(`SELECT * FROM game_prizes WHERE game = ?${filter} ORDER BY display_order ASC`)
+    .bind(game)
+    .all()
+  return results.map(toPrizeRow)
+}
+
+export async function gameInventoryById(game: string): Promise<Map<string, number | null>> {
+  const { results } = await getDb()
+    .prepare('SELECT id, inventory FROM game_prizes WHERE game = ?')
+    .bind(game)
+    .all<{ id: string; inventory: number | null }>()
+  return new Map(results.map(r => [r.id, r.inventory]))
+}
+
+// Full replace of one game's prizes, atomic like replacePrizes.
+export async function replaceGamePrizes(game: string, rows: ReplacementPrize[]) {
+  const db = getDb()
+  const insert = db.prepare(
+    'INSERT INTO game_prizes (id, game, name, prize_type, probability, inventory, active, display_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  )
+  await db.batch([
+    db.prepare('DELETE FROM game_prizes WHERE game = ?').bind(game),
+    ...rows.map(r =>
+      insert.bind(crypto.randomUUID(), game, r.name, r.prize_type, r.probability, r.inventory, r.active ? 1 : 0, r.display_order)
+    ),
+  ])
 }
