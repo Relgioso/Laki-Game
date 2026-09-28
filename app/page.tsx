@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import lakiwinLogo from "@/public/brand/lakiwin-horizontal.png";
+import { GAMES } from "@/lib/games";
 
 export default function Home() {
   return (
@@ -13,24 +14,15 @@ export default function Home() {
           priority
         />
         <div className="w-full flex flex-col gap-4">
-          <Link
-            href="/play/wheel"
-            className="w-full rounded-full bg-[#fad403] py-4 text-center font-extrabold uppercase tracking-wide text-black shadow-[0_4px_0_#cc9700] active:translate-y-[2px] active:shadow-[0_2px_0_#cc9700] transition-transform"
-          >
-            Spin the Wheel
-          </Link>
-          <Link
-            href="/play/color-game"
-            className="w-full rounded-full bg-[#fad403] py-4 text-center font-extrabold uppercase tracking-wide text-black shadow-[0_4px_0_#cc9700] active:translate-y-[2px] active:shadow-[0_2px_0_#cc9700] transition-transform"
-          >
-            Color Game
-          </Link>
-          <Link
-            href="/play/duck-race"
-            className="w-full rounded-full bg-[#fad403] py-4 text-center font-extrabold uppercase tracking-wide text-black shadow-[0_4px_0_#cc9700] active:translate-y-[2px] active:shadow-[0_2px_0_#cc9700] transition-transform"
-          >
-            Duck Race
-          </Link>
+          {GAMES.map((game) => (
+            <Link
+              key={game.slug}
+              href={game.playHref}
+              className="w-full rounded-full bg-[#fad403] py-4 text-center font-extrabold uppercase tracking-wide text-black shadow-[0_4px_0_#cc9700] active:translate-y-[2px] active:shadow-[0_2px_0_#cc9700] transition-transform"
+            >
+              {game.title}
+            </Link>
+          ))}
         </div>
       </div>
     </div>

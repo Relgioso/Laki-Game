@@ -2,12 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-
-const GAMES: Record<string, string> = {
-  wheel: 'Wheel',
-  'color-game': 'Color Game',
-  'duck-race': 'Duck Race',
-}
+import { GAMES } from '@/lib/games'
 
 // The landing page and both public play screens (kiosk/booth tablets) each
 // have their own fully custom, branded design with no shared chrome -- a
@@ -28,7 +23,7 @@ export default function SiteHeader() {
   // flat list of every game's admin/play links, which read as a cluttered
   // "module dashboard" rather than a way back to what you were just doing.
   const slug = pathname?.split('/')[2]
-  const game = slug ? GAMES[slug] : undefined
+  const game = GAMES.find((g) => g.slug === slug)
 
   return (
     <header className="bg-black px-6 py-3.5 flex items-center gap-4">
@@ -37,10 +32,10 @@ export default function SiteHeader() {
       </Link>
       {game && (
         <Link
-          href={`/play/${slug}`}
+          href={game.playHref}
           className="ml-auto rounded-full bg-[#fad403] px-4 py-1.5 text-sm font-bold text-black shadow-[0_3px_0_#cc9700] transition-transform active:translate-y-[1px] active:shadow-[0_2px_0_#cc9700]"
         >
-          ← Back to {game}
+          ← Back to {game.navTitle}
         </Link>
       )}
     </header>
