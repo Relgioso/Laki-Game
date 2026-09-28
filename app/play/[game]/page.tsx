@@ -2,9 +2,10 @@ import { notFound } from 'next/navigation'
 import GameShell from '@/components/play/game-shell'
 import { getSharedGame, SHARED_GAMES } from '@/lib/games'
 
-// Only registered shared games get a page; /play/wheel etc. are separate
-// static routes and take precedence over this dynamic one.
-export const dynamicParams = false
+// Prerenders every registered shared game; unknown slugs hit notFound() below.
+// Deliberately NOT `dynamicParams = false`: on OpenNext that turns any
+// prerender-cache miss into a 404 instead of an on-demand render.
+// /play/wheel etc. are separate static routes and take precedence.
 
 export function generateStaticParams() {
   return SHARED_GAMES.map((g) => ({ game: g.slug }))

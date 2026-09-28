@@ -29,6 +29,16 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Adding a new game
+
+Games are listed in `lib/games.ts`. A new *type* of game (like Pachinko) on the shared platform needs only:
+
+1. A board component in `components/games/<mechanic>.tsx` implementing `MechanicProps` (`components/games/types.ts`): render the prizes, animate to `target` when it is set, call `onFinished()` once when done.
+2. Register it in `components/games/mechanics.ts` (component + button labels) and add the mechanic name to `Mechanic` in `lib/games.ts`.
+3. Add `shared('<slug>', '<Title>', '<mechanic>', <maxPrizes>)` to `GAMES`.
+
+Prizes, odds, stock, the play screen, the prize reveal, `/admin/<slug>` and the home-page button come for free. Deploy with `npm run deploy` — no migration needed (all shared games use the `game_prizes` table).
+
 ## Deploy (Cloudflare Workers + D1)
 
 Hosted on Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare), data in the `laki-game` D1 database (see `wrangler.jsonc`). No environment variables needed — the database is a binding.
