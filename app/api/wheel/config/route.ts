@@ -1,26 +1,20 @@
-import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
+import { currentInventoryBy, getDb, replacePrizes, selectPrizes } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 const ALLOWED_PRIZE_TYPES = ['merchandise', 'bonus', 'cash', 'voucher', 'consolation', 'custom']
 
 export async function GET() {
   try {
-    const { data: settings, error: settingsError } = await supabase
-      .from('wheel_settings')
-      .select('slot_count')
-      .eq('id', 1)
-      .single()
-    if (settingsError) throw settingsError
+    const settings = await getDb()
+      .prepare('SELECT slot_count FROM wheel_settings WHERE id = 1')
+      .first<{ slot_count: number }>()
+    if (!settings) throw new Error('Wheel settings row is missing.')
 
-    const { data: prizes, error: prizesError } = await supabase
-      .from('wheel_prizes')
-      .select('*')
-      .order('display_order', { ascending: true })
-    if (prizesError) throw prizesError
+    const prizes = await selectPrizes('wheel_prizes', '', 'display_order ASC')
 
     return NextResponse.json({
       slotCount: settings.slot_count,
-      prizes: (prizes || []).map((p: any) => ({
+      prizes: prizes.map(p => ({
         id: p.id,
         name: p.name,
         prizeType: p.prize_type,
@@ -42,12 +36,6 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'slotCount must be 6, 8, 10, or 12.' }, { status: 400 })
     }
 
-    const { error: settingsError } = await supabase
-      .from('wheel_settings')
-      .update({ slot_count: slotCount })
-      .eq('id', 1)
-    if (settingsError) throw settingsError
-
     if (prizes) {
       for (const p of prizes) {
         const name = typeof p.name === 'string' ? p.name.trim() : ''
@@ -66,27 +54,20 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Fetch current inventory before the delete below, so we can merge live
-    // DB values back in for any prize row the admin didn't explicitly edit
-    // (i.e. the client omitted `inventory` from that row's payload). Without
-    // this, resubmitting a stale page-load snapshot would silently overwrite
-    // any inventory changes caused by plays that happened after page load.
-    const { data: currentPrizes, error: currentError } = await supabase
-      .from('wheel_prizes')
-      .select('id, inventory')
-    if (currentError) throw currentError
-    const currentInventoryById = new Map<string, number | null>(
-      (currentPrizes || []).map((p: any) => [p.id, p.inventory])
-    )
+    await getDb().prepare('UPDATE wheel_settings SET slot_count = ? WHERE id = 1').bind(slotCount).run()
 
-    // Full replace: delete every existing prize, then insert the submitted set.
-    // Simplest correct approach for a single admin editing a small list (max 12
-    // rows) with no concurrent-editor concern in this no-login app.
-    const { error: deleteError } = await supabase.from('wheel_prizes').delete().not('id', 'is', null)
-    if (deleteError) throw deleteError
+    if (prizes) {
+      // Fetch current inventory before the replace below, so we can merge live
+      // DB values back in for any prize row the admin didn't explicitly edit
+      // (i.e. the client omitted `inventory` from that row's payload). Without
+      // this, resubmitting a stale page-load snapshot would silently overwrite
+      // any inventory changes caused by plays that happened after page load.
+      const currentInventoryById = await currentInventoryBy('wheel_prizes', 'id')
 
-    if (prizes && prizes.length > 0) {
-      const rows = prizes.map((p: any, i: number) => {
+      // Full replace: delete every existing prize, then insert the submitted set.
+      // Simplest correct approach for a single admin editing a small list (max 12
+      // rows) with no concurrent-editor concern in this no-login app.
+      await replacePrizes('wheel_prizes', prizes.map((p: any, i: number) => {
         let inventory: number | null
         if (p.id && !('inventory' in p)) {
           // Admin didn't touch this row's inventory -- use the live DB value
@@ -106,9 +87,7 @@ export async function PUT(request: NextRequest) {
           active: p.active ?? true,
           display_order: p.displayOrder ?? i,
         }
-      })
-      const { error: insertError } = await supabase.from('wheel_prizes').insert(rows)
-      if (insertError) throw insertError
+      }))
     }
 
     return NextResponse.json({ success: true })

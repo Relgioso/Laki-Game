@@ -1,4 +1,4 @@
-import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
+import { currentInventoryBy, getDb, replacePrizes, selectPrizes } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 const ALLOWED_PRIZE_TYPES = ['merchandise', 'bonus', 'cash', 'voucher', 'consolation', 'custom']
@@ -16,24 +16,15 @@ function validatePrizeShape(p: any): string | null {
 
 export async function GET() {
   try {
-    const { data: combos, error: comboError } = await supabase
-      .from('color_combo_prizes')
-      .select('*')
-      .order('symbol', { ascending: true })
-    if (comboError) throw comboError
-
-    const { data: merch, error: merchError } = await supabase
-      .from('color_merch_prizes')
-      .select('*')
-      .order('display_order', { ascending: true })
-    if (merchError) throw merchError
+    const combos = await selectPrizes('color_combo_prizes', '', 'symbol ASC')
+    const merch = await selectPrizes('color_merch_prizes', '', 'display_order ASC')
 
     return NextResponse.json({
-      combos: (combos || []).map((c: any) => ({
+      combos: combos.map(c => ({
         id: c.id, symbol: c.symbol, name: c.name, prizeType: c.prize_type,
         probability: c.probability, inventory: c.inventory, active: c.active,
       })),
-      merch: (merch || []).map((m: any) => ({
+      merch: merch.map(m => ({
         id: m.id, name: m.name, prizeType: m.prize_type, probability: m.probability,
         inventory: m.inventory, active: m.active, displayOrder: m.display_order,
       })),
@@ -65,73 +56,49 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    if (combos) {
+    if (combos && combos.length > 0) {
       // Fetch current inventory before updating, so we can merge live DB
       // values back in for any combo row the admin didn't explicitly edit
       // (i.e. the client omitted `inventory` from that row's payload).
-      const { data: currentCombos, error: currentCombosError } = await supabase
-        .from('color_combo_prizes')
-        .select('symbol, inventory')
-      if (currentCombosError) throw currentCombosError
-      const currentInventoryBySymbol = new Map<string, number | null>(
-        (currentCombos || []).map((c: any) => [c.symbol, c.inventory])
-      )
+      const currentInventoryBySymbol = await currentInventoryBy('color_combo_prizes', 'symbol')
 
-      for (const c of combos) {
+      const db = getDb()
+      const update = db.prepare(
+        'UPDATE color_combo_prizes SET name = ?, prize_type = ?, probability = ?, inventory = ?, active = ?, updated_at = ? WHERE symbol = ?'
+      )
+      const now = new Date().toISOString()
+      await db.batch(combos.map((c: any) => {
         const inventory = !('inventory' in c)
           ? (currentInventoryBySymbol.has(c.symbol)
               ? currentInventoryBySymbol.get(c.symbol)
               : (c.inventory ?? null))
           : (c.inventory ?? null)
-        const { error } = await supabase
-          .from('color_combo_prizes')
-          .update({
-            name: c.name,
-            prize_type: c.prizeType,
-            probability: c.probability ?? 0,
-            inventory,
-            active: c.active ?? true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('symbol', c.symbol)
-        if (error) throw error
-      }
+        return update.bind(c.name, c.prizeType, c.probability ?? 0, inventory, (c.active ?? true) ? 1 : 0, now, c.symbol)
+      }))
     }
 
     if (merch) {
       // Same live-DB merge, keyed by id, before the delete+insert replace.
-      const { data: currentMerch, error: currentMerchError } = await supabase
-        .from('color_merch_prizes')
-        .select('id, inventory')
-      if (currentMerchError) throw currentMerchError
-      const currentInventoryById = new Map<string, number | null>(
-        (currentMerch || []).map((m: any) => [m.id, m.inventory])
-      )
+      const currentInventoryById = await currentInventoryBy('color_merch_prizes', 'id')
 
-      const { error: deleteError } = await supabase.from('color_merch_prizes').delete().not('id', 'is', null)
-      if (deleteError) throw deleteError
-      if (merch.length > 0) {
-        const rows = merch.map((m: any, i: number) => {
-          let inventory: number | null
-          if (m.id && !('inventory' in m)) {
-            inventory = currentInventoryById.has(m.id)
-              ? (currentInventoryById.get(m.id) as number | null)
-              : (m.inventory ?? null)
-          } else {
-            inventory = m.inventory ?? null
-          }
-          return {
-            name: m.name,
-            prize_type: m.prizeType,
-            probability: m.probability ?? null,
-            inventory,
-            active: m.active ?? true,
-            display_order: m.displayOrder ?? i,
-          }
-        })
-        const { error: insertError } = await supabase.from('color_merch_prizes').insert(rows)
-        if (insertError) throw insertError
-      }
+      await replacePrizes('color_merch_prizes', merch.map((m: any, i: number) => {
+        let inventory: number | null
+        if (m.id && !('inventory' in m)) {
+          inventory = currentInventoryById.has(m.id)
+            ? (currentInventoryById.get(m.id) as number | null)
+            : (m.inventory ?? null)
+        } else {
+          inventory = m.inventory ?? null
+        }
+        return {
+          name: m.name,
+          prize_type: m.prizeType,
+          probability: m.probability ?? null,
+          inventory,
+          active: m.active ?? true,
+          display_order: m.displayOrder ?? i,
+        }
+      }))
     }
 
     return NextResponse.json({ success: true })

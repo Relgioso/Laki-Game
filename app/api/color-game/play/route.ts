@@ -1,4 +1,4 @@
-import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
+import { decrementInventory, PrizeRow, selectPrizes } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
 function weightedPick<T extends { probability: number | null }>(items: T[]): T {
@@ -18,38 +18,25 @@ function weightedPick<T extends { probability: number | null }>(items: T[]): T {
   return resolved[resolved.length - 1].item
 }
 
-async function drawAndDecrement(table: 'color_combo_prizes' | 'color_merch_prizes', filterActive: any[]) {
+async function drawAndDecrement(table: 'color_combo_prizes' | 'color_merch_prizes', filterActive: PrizeRow[]) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidates = filterActive.filter(c => c.inventory == null || c.inventory > 0)
     if (candidates.length === 0) return null
     const chosen = weightedPick(candidates)
     if (chosen.inventory == null) return chosen
-    const { data: updated, error } = await supabase
-      .from(table)
-      .update({ inventory: chosen.inventory - 1, updated_at: new Date().toISOString() })
-      .eq('id', chosen.id)
-      .eq('inventory', chosen.inventory)
-      .select()
-    if (error) throw error
-    if (updated && updated.length > 0) return chosen
+    if (await decrementInventory(table, chosen.id, chosen.inventory)) return chosen
     // Lost the race — re-fetch fresh state for this table and retry.
-    const { data: fresh, error: fetchError } = await supabase.from(table).select('*').eq('active', true)
-    if (fetchError) throw fetchError
-    filterActive = fresh || []
+    filterActive = await selectPrizes(table, 'active = 1')
   }
   return null
 }
 
 export async function POST() {
   try {
-    const { data: combos, error: comboError } = await supabase
-      .from('color_combo_prizes')
-      .select('*')
-      .eq('active', true)
-    if (comboError) throw comboError
+    const combos = await selectPrizes('color_combo_prizes', 'active = 1')
 
-    const activeCombos = (combos || []).filter((c: any) => c.inventory == null || c.inventory > 0)
-    const comboProbabilityTotal = activeCombos.reduce((sum: number, c: any) => sum + (c.probability || 0), 0)
+    const activeCombos = combos.filter(c => c.inventory == null || c.inventory > 0)
+    const comboProbabilityTotal = activeCombos.reduce((sum, c) => sum + (c.probability || 0), 0)
     const roll = Math.random() * 100
 
     if (roll < comboProbabilityTotal && activeCombos.length > 0) {
@@ -61,13 +48,9 @@ export async function POST() {
       console.warn('Color Game: combo draw exhausted retries, falling back to merchandise pool')
     }
 
-    const { data: merch, error: merchError } = await supabase
-      .from('color_merch_prizes')
-      .select('*')
-      .eq('active', true)
-    if (merchError) throw merchError
+    const merch = await selectPrizes('color_merch_prizes', 'active = 1')
 
-    const won = await drawAndDecrement('color_merch_prizes', merch || [])
+    const won = await drawAndDecrement('color_merch_prizes', merch)
     if (!won) {
       return NextResponse.json({ error: 'No prizes available to draw.' }, { status: 400 })
     }

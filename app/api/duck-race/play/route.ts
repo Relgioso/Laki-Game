@@ -1,4 +1,4 @@
-import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
+import { decrementInventory, selectPrizes } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
 function weightedPick<T extends { probability: number | null }>(items: T[]): T {
@@ -22,17 +22,12 @@ function weightedPick<T extends { probability: number | null }>(items: T[]): T {
 export async function POST() {
   try {
     for (let attempt = 0; attempt < 5; attempt++) {
-      const { data: candidates, error } = await supabase
-        .from('duck_race_prizes')
-        .select('*')
-        .eq('active', true)
-        .or('inventory.is.null,inventory.gt.0')
-      if (error) throw error
-      if (!candidates || candidates.length === 0) {
+      const candidates = await selectPrizes('duck_race_prizes', 'active = 1 AND (inventory IS NULL OR inventory > 0)')
+      if (candidates.length === 0) {
         return NextResponse.json({ error: 'No prizes available to draw.' }, { status: 400 })
       }
 
-      const chosen = weightedPick(candidates as any[])
+      const chosen = weightedPick(candidates)
 
       if (chosen.inventory == null) {
         return NextResponse.json({
@@ -40,15 +35,7 @@ export async function POST() {
         })
       }
 
-      const { data: updated, error: updateError } = await supabase
-        .from('duck_race_prizes')
-        .update({ inventory: chosen.inventory - 1, updated_at: new Date().toISOString() })
-        .eq('id', chosen.id)
-        .eq('inventory', chosen.inventory)
-        .select()
-      if (updateError) throw updateError
-
-      if (updated && updated.length > 0) {
+      if (await decrementInventory('duck_race_prizes', chosen.id, chosen.inventory)) {
         return NextResponse.json({
           prize: { id: chosen.id, name: chosen.name, prizeType: chosen.prize_type, displayOrder: chosen.display_order },
         })

@@ -29,8 +29,14 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## Deploy (Cloudflare Workers + D1)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Hosted on Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare), data in the `laki-game` D1 database (see `wrangler.jsonc`). No environment variables needed — the database is a binding.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx wrangler login          # once, as claire@racphil.com
+npm run db:migrate          # apply any new migrations/ to the live D1
+npm run deploy              # build + deploy to https://laki-game.claire-835.workers.dev
+```
+
+Local production preview (Workers runtime + local D1 copy): `npm run db:migrate:local && npm run preview`.
