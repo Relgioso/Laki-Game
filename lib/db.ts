@@ -42,7 +42,7 @@ export async function decrementInventory(table: PrizeTable, id: string, expected
   return meta.changes > 0
 }
 
-type ReplacementPrize = {
+export type ReplacementPrize = {
   name: string
   prize_type: string
   probability: number | null
