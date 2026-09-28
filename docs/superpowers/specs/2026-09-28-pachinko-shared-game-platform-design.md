@@ -62,9 +62,9 @@ current prizes (Totebag / Coin Purse / Round Fan, unlimited) so it's playable at
 - `components/play/game-shell.tsx`: shared play screen — back + manage-prizes
   buttons, loading/error states, the big action button, calls the play API,
   hands the result to the mechanic, shows the reveal (confetti, sounds, photo).
-- Mechanic contract: `{ prizes, target, onFinished, preview? }` — the mechanic
-  animates to `target` and calls `onFinished`; `preview` renders it static for
-  the admin screen.
+- Mechanic contract: `{ prizes, target, onFinished }` — the mechanic animates to
+  `target` and calls `onFinished`; with `target: null` it renders static, which
+  is what the admin preview uses.
 - `components/games/pachinko.tsx`: the board + animation; `lib/pachinko-path.ts`
   holds the pure path planner.
 - `app/play/[game]/page.tsx` and `app/admin/[game]/page.tsx`: dynamic routes for
